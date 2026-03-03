@@ -1,0 +1,5 @@
+# Sessions directory — contains Google auth cookies
+# DO NOT commit these files to version control!
+sessions/
+node_modules/
+dist/
