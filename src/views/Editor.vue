@@ -120,6 +120,7 @@
         @edge-click="onEdgeClick"
         @pane-click="onPaneClick"
         @connect="onConnect"
+        @nodes-change="onNodesChange"
         @edges-change="onEdgesChange"
         :is-valid-connection="() => true"
         nodes-connectable
@@ -344,6 +345,7 @@ import WriteCollectionConfig from '../components/WriteCollectionConfig.vue'
 import ExecutionLoggerConfig from '../components/ExecutionLoggerConfig.vue'
 import PortVisibilityEditor from '../components/PortVisibilityEditor.vue'
 import { useWorkflowExecution } from '../composables/useWorkflowExecution'
+import { useHistory } from '../composables/useHistory'
 import { useExecutionStore } from '../stores/execution'
 import { useNodeCacheStore } from '../stores/nodeCache'
 import type { Workflow } from '../api/workflow'
@@ -372,6 +374,9 @@ const wf = computed(() => store.getWorkflow(wfId))
 
 const nodes = ref<Node[]>(wf.value?.nodes || [])
 const edges = ref<Edge[]>(wf.value?.edges || [])
+
+// Undo/Redo 歷史管理
+const { canUndo, canRedo, recordHistory, initHistory, undo, redo } = useHistory(nodes, edges)
 
 // 觸發器設定
 const triggerMode = ref<'fallback' | 'sequential'>(wf.value?.triggerMode || 'fallback')
@@ -589,6 +594,7 @@ function onDrop(e: DragEvent) {
   }
   nodes.value.push(newNode)
   draggedNodeType.value = ''
+  recordHistory()  // 記錄歷史
 }
 
 // Copy & Paste
@@ -621,6 +627,7 @@ function pasteNode() {
   nodes.value.push(newNode)
   selectedNodeId.value = newNode.id
   console.log('📌 Pasted node:', newNode.data.label)
+  recordHistory()  // 記錄歷史
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -630,6 +637,26 @@ function handleKeydown(e: KeyboardEvent) {
 
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
   const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey
+
+  // Undo: Ctrl+Z (Windows) / Cmd+Z (Mac)
+  if (ctrlOrCmd && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (canUndo.value) {
+      undo()
+      showUndoRedoToast('↩️ 復原')
+    }
+    return
+  }
+
+  // Redo: Ctrl+Shift+Z (Windows) / Cmd+Shift+Z (Mac) or Ctrl+Y (Windows)
+  if ((ctrlOrCmd && e.shiftKey && e.key === 'z') || (ctrlOrCmd && e.key === 'y')) {
+    e.preventDefault()
+    if (canRedo.value) {
+      redo()
+      showUndoRedoToast('↪️ 重做')
+    }
+    return
+  }
 
   if (ctrlOrCmd && e.key === 'c') {
     e.preventDefault()
@@ -642,6 +669,14 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault()
     toggleNodeDisabled()
   }
+}
+
+function showUndoRedoToast(message: string) {
+  const toast = document.createElement('div')
+  toast.textContent = message
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);color:var(--text-primary);padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.2s ease;border:1px solid var(--border);'
+  document.body.appendChild(toast)
+  setTimeout(() => toast.remove(), 1000)
 }
 
 function toggleNodeDisabled() {
@@ -658,6 +693,8 @@ function toggleNodeDisabled() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+  // 初始化歷史記錄（延遲一點確保 nodes/edges 已載入）
+  setTimeout(() => initHistory(), 100)
 })
 
 onUnmounted(() => {
@@ -680,15 +717,32 @@ const nodeData = ref<Record<string, any>>({})
 // ── Connection handler — REQUIRED for edge drag to work ──────────────────
 function onConnect(connection: Connection) {
   edges.value = addEdge({ ...connection, animated: true }, edges.value)
+  recordHistory()  // 記錄歷史
 }
 
 function onEdgesChange(changes: any[]) {
   // Handle edge changes (remove, add, update)
+  let hasChanges = false
   changes.forEach(change => {
     if (change.type === 'remove') {
       edges.value = edges.value.filter(e => e.id !== change.id)
+      hasChanges = true
     }
   })
+  if (hasChanges) recordHistory()  // 記錄歷史
+}
+
+function onNodesChange(changes: any[]) {
+  // Handle node changes (remove, position, etc.)
+  let hasRemoval = false
+  changes.forEach(change => {
+    if (change.type === 'remove') {
+      hasRemoval = true
+      // 同時刪除相關的邊
+      edges.value = edges.value.filter(e => e.source !== change.id && e.target !== change.id)
+    }
+  })
+  if (hasRemoval) recordHistory()  // 記錄歷史（節點刪除）
 }
 
 function onNodeClick({ node }: { node: Node }) {
