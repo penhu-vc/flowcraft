@@ -469,8 +469,8 @@ async function copyScript() {
 // 觸發器設定相關函數
 function onTriggerModeChange() {
   if (!wf.value) return
+  // 直接更新工作流，不調用 saveWorkflow（會覆蓋）
   store.updateWorkflow(wfId, { ...wf.value, triggerMode: triggerMode.value })
-  store.saveWorkflow(wfId, nodes.value, edges.value)
 }
 
 function updateTriggerOrder(nodeId: string, event: Event) {
