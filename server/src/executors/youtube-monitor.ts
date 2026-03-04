@@ -4,8 +4,8 @@
  */
 
 import { getRecentVideos, extractChannelId } from '../utils/youtube-utils'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { join, dirname } from 'path'
 
 interface Channel {
     id: string
@@ -18,7 +18,8 @@ interface Channel {
 type EmitFn = (event: string, data: unknown) => void
 
 // State 檔案路徑（記住已處理的影片）
-const STATE_FILE = join(process.cwd(), 'data', 'youtube-monitor-state.json')
+// 使用 __dirname 確保路徑正確：從 src/executors/ 往上兩層到 server/，再進入 data/
+const STATE_FILE = join(__dirname, '..', '..', 'data', 'youtube-monitor-state.json')
 
 // 讀取上次處理的影片 ID
 function getLastProcessedVideoId(): string | null {
@@ -36,8 +37,14 @@ function getLastProcessedVideoId(): string | null {
 // 儲存已處理的影片 ID
 function saveLastProcessedVideoId(videoId: string, emit: EmitFn): void {
     try {
+        // 確保 data 目錄存在
+        const dataDir = dirname(STATE_FILE)
+        if (!existsSync(dataDir)) {
+            mkdirSync(dataDir, { recursive: true })
+        }
+
         writeFileSync(STATE_FILE, JSON.stringify({ lastVideoId: videoId, updatedAt: new Date().toISOString() }))
-        emit('node:log', { message: `💾 已儲存 state: ${videoId}` })
+        emit('node:log', { message: `💾 已儲存 state: ${videoId} (${STATE_FILE})` })
     } catch (error) {
         emit('node:log', { message: `⚠️ 儲存 state 失敗: ${error}` })
     }
