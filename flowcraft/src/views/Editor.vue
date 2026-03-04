@@ -3,7 +3,25 @@
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:10px;">
       <button class="btn btn-secondary btn-sm" @click="router.back()">← 返回</button>
-      <span class="topbar-title">{{ wf?.name || '載入中...' }}</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span v-if="!editingName" class="topbar-title" @dblclick="startEditName" style="cursor:pointer;">
+          {{ wf?.name || '載入中...' }}
+        </span>
+        <input
+          v-else
+          ref="nameInputRef"
+          class="topbar-title-input"
+          v-model="editingNameValue"
+          @blur="saveWorkflowName"
+          @keyup.enter="saveWorkflowName"
+          @keyup.esc="cancelEditName"
+        />
+        <button
+          class="btn-copy"
+          @click="copyWorkflowName"
+          title="複製工作流名稱"
+        >📋</button>
+      </div>
       <span class="badge badge-active" v-if="wf?.active">● 執行中</span>
     </div>
     <div class="topbar-actions">
@@ -60,10 +78,13 @@
     <div class="canvas-area" ref="canvasRef" @dragover.prevent @drop="onDrop">
       <VueFlow
         v-model:nodes="nodes"
-        v-model:edges="edges"
+        :edges="styledEdges"
         :default-edge-options="{ animated: true, selectable: true, deletable: true, interactionWidth: 20 }"
         @node-click="onNodeClick"
+        @edge-click="onEdgeClick"
+        @pane-click="onPaneClick"
         @connect="onConnect"
+        @edges-change="onEdgesChange"
         :is-valid-connection="() => true"
         nodes-connectable
         edges-deletable
@@ -157,6 +178,9 @@
               :config="nodeData"
               :inputs="selectedDef.inputs"
               :outputs="selectedDef.outputs"
+              :nodeId="selectedNodeId"
+              :nodes="nodes"
+              :edges="edges"
               @update="onCustomConfigUpdate"
             />
             <!-- Generic config renderer -->
@@ -181,10 +205,39 @@
                 :inputs="portableInputs"
                 :outputs="selectedDef.outputs"
                 :hiddenPorts="hiddenPortsFromConfig"
+                :inputOrder="inputOrderFromConfig"
+                :outputOrder="outputOrderFromConfig"
                 portColor="var(--accent-cyan)"
                 @update="onGenericHiddenPortsUpdate"
+                @update-input-order="onInputOrderUpdate"
+                @update-order="onOutputOrderUpdate"
               />
             </template>
+
+            <!-- 🆕 快取開關（所有節點都有） -->
+            <div class="divider" />
+            <div class="cache-control">
+              <div class="cache-header">
+                <span>⚡ 使用快取結果</span>
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    v-model="nodeData.useCachedResult"
+                    :disabled="!nodeCacheStore.hasCache(selectedNodeId || '')"
+                    @change="updateNodeConfig"
+                  />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="cache-hint">
+                <template v-if="nodeCacheStore.hasCache(selectedNodeId || '')">
+                  ✅ 有快取（{{ nodeCacheStore.getCacheAge(selectedNodeId || '') }}）
+                </template>
+                <template v-else>
+                  ⚪ 無快取（需先執行一次）
+                </template>
+              </div>
+            </div>
           </template>
         </div>
       </div>
@@ -205,33 +258,152 @@ import { useWorkflowStore } from '../stores/workflow'
 import { NODE_REGISTRY, CATEGORY_COLORS, CATEGORY_LABELS, getNodeDef } from '../nodes/registry'
 import CustomNode from '../components/CustomNode.vue'
 import YouTubeMonitorConfig from '../components/YouTubeMonitorConfig.vue'
+import YouTubeRecentVideosConfig from '../components/YouTubeRecentVideosConfig.vue'
 import NotebookLMConfig from '../components/NotebookLMConfig.vue'
 import SendTelegramConfig from '../components/SendTelegramConfig.vue'
 import SegmentMiningConfig from '../components/SegmentMiningConfig.vue'
+import BulletPointReferenceConfig from '../components/BulletPointReferenceConfig.vue'
+import WriteCollectionConfig from '../components/WriteCollectionConfig.vue'
+import ExecutionLoggerConfig from '../components/ExecutionLoggerConfig.vue'
 import PortVisibilityEditor from '../components/PortVisibilityEditor.vue'
 import { useWorkflowExecution } from '../composables/useWorkflowExecution'
 import { useExecutionStore } from '../stores/execution'
+import { useNodeCacheStore } from '../stores/nodeCache'
 import type { Workflow } from '../api/workflow'
 
 // Map of customConfig name -> component
 const CUSTOM_CONFIG_MAP: Record<string, any> = {
   YouTubeMonitorConfig,
+  YouTubeRecentVideosConfig,
   NotebookLMConfig,
   SendTelegramConfig,
   SegmentMiningConfig,
+  BulletPointReferenceConfig,
+  WriteCollectionConfig,
+  ExecutionLoggerConfig,
 }
 
 const route = useRoute()
 const router = useRouter()
 const store = useWorkflowStore()
 const { executeWorkflow } = useWorkflowExecution()
-const executionStore = useExecutionStore()  // 直接獲取 store，確保 reactive
+const executionStore = useExecutionStore()
+const nodeCacheStore = useNodeCacheStore()  // 直接獲取 store，確保 reactive
 
 const wfId = route.params.id as string
 const wf = computed(() => store.getWorkflow(wfId))
 
 const nodes = ref<Node[]>(wf.value?.nodes || [])
 const edges = ref<Edge[]>(wf.value?.edges || [])
+
+// Sync nodes/edges when workflow changes (e.g., after save)
+watch(wf, (newWf) => {
+  if (newWf && newWf.nodes && newWf.edges) {
+    // Only sync if not currently editing to avoid overwriting changes
+    if (!selectedNodeId.value) {
+      nodes.value = newWf.nodes
+      edges.value = newWf.edges
+    }
+  }
+})
+
+// Workflow name editing
+const editingName = ref(false)
+const editingNameValue = ref('')
+const nameInputRef = ref<HTMLInputElement | null>(null)
+
+function startEditName() {
+  if (!wf.value) return
+  editingNameValue.value = wf.value.name
+  editingName.value = true
+  setTimeout(() => nameInputRef.value?.focus(), 0)
+}
+
+function saveWorkflowName() {
+  if (!editingName.value || !wf.value) return
+  const newName = editingNameValue.value.trim()
+  if (newName && newName !== wf.value.name) {
+    store.updateWorkflow(wfId, { ...wf.value, name: newName })
+  }
+  editingName.value = false
+}
+
+function cancelEditName() {
+  editingName.value = false
+  editingNameValue.value = ''
+}
+
+async function copyWorkflowName() {
+  if (!wf.value) return
+  const nameWithPrefix = `工作流 ${wf.value.name}`
+  try {
+    await navigator.clipboard.writeText(nameWithPrefix)
+    // Show toast notification
+    const toast = document.createElement('div')
+    toast.className = 'copy-toast'
+    toast.textContent = '✅ 已複製'
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--accent-cyan);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.3s ease;'
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+  } catch (err) {
+    console.error('Failed to copy:', err)
+  }
+}
+
+// Computed edges with dynamic styling based on selection and disabled state
+const styledEdges = computed(() => {
+  return edges.value.map(edge => {
+    const sourceNode = nodes.value.find(n => n.id === edge.source)
+    const targetNode = nodes.value.find(n => n.id === edge.target)
+
+    // Check if connected to disabled node
+    const isDisabledEdge = sourceNode?.data.disabled || targetNode?.data.disabled
+
+    // Check if this edge is selected
+    const isSelectedEdge = edge.id === selectedEdgeId.value
+
+    // Check if connected to selected node
+    const isConnectedToSelected = selectedNodeId.value &&
+      (edge.source === selectedNodeId.value || edge.target === selectedNodeId.value)
+
+    // Check if connected to executing node
+    const runningNodeId = executionStore.runningNodeId
+    const isConnectedToExecuting = runningNodeId &&
+      (edge.source === runningNodeId || edge.target === runningNodeId)
+    const isDownstreamOfExecuting = runningNodeId && edge.source === runningNodeId
+
+    // Determine edge class (priority: executing > disabled > edge selection > node selection)
+    let edgeClass = ''
+    let animated = false
+
+    if (isDisabledEdge) {
+      // Disabled nodes always have dimmed edges
+      edgeClass = 'edge-dimmed'
+    } else if (runningNodeId) {
+      // When a node is executing
+      if (isDownstreamOfExecuting) {
+        edgeClass = 'edge-executing'
+        animated = true
+      } else {
+        edgeClass = 'edge-dimmed'
+      }
+    } else if (selectedEdgeId.value) {
+      // When an edge is selected
+      edgeClass = isSelectedEdge ? 'edge-highlighted' : 'edge-dimmed'
+      animated = isSelectedEdge
+    } else if (selectedNodeId.value) {
+      // When a node is selected
+      edgeClass = isConnectedToSelected ? 'edge-highlighted' : 'edge-dimmed'
+      animated = isConnectedToSelected
+    }
+
+    return {
+      ...edge,
+      class: edgeClass,
+      animated
+    }
+  })
+})
 
 watch(() => wf.value, (v) => {
   if (v) {
@@ -243,13 +415,24 @@ watch(() => wf.value, (v) => {
 
 // Palette
 const search = ref('')
+
+// 取得隱藏的節點列表
+function getHiddenNodes(): Set<string> {
+  const stored = localStorage.getItem('flowcraft_hidden_nodes')
+  return stored ? new Set(JSON.parse(stored)) : new Set()
+}
+
 const filteredByCategory = computed(() => {
   const q = search.value.toLowerCase()
+  const hiddenNodes = getHiddenNodes()
   const result: Record<string, typeof NODE_REGISTRY> = {}
+
   for (const cat of ['trigger','action','ai','data','media','logic']) {
-    result[cat] = NODE_REGISTRY.filter(n => n.category === cat && (
-      !q || n.name.toLowerCase().includes(q) || n.description.toLowerCase().includes(q)
-    ))
+    result[cat] = NODE_REGISTRY.filter(n =>
+      n.category === cat &&
+      !hiddenNodes.has(n.id) &&  // 過濾隱藏的節點
+      (!q || n.name.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
+    )
   }
   return result
 })
@@ -262,7 +445,7 @@ function onDragStart(e: DragEvent, nodeId: string) {
 }
 
 const canvasRef = ref<HTMLElement>()
-const { project } = useVueFlow()
+const { project, updateNode } = useVueFlow()
 function onDrop(e: DragEvent) {
   if (!draggedNodeType.value) return
   const bounds = canvasRef.value!.getBoundingClientRect()
@@ -326,7 +509,23 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (ctrlOrCmd && e.key === 'v') {
     e.preventDefault()
     pasteNode()
+  } else if (e.key === 'd' || e.key === 'D') {
+    // Toggle disabled state for selected node
+    e.preventDefault()
+    toggleNodeDisabled()
   }
+}
+
+function toggleNodeDisabled() {
+  if (!selectedNodeId.value) return
+  const node = nodes.value.find(n => n.id === selectedNodeId.value)
+  if (!node) return
+
+  // Toggle disabled state
+  node.data.disabled = !node.data.disabled
+
+  const status = node.data.disabled ? '🚫 已停用' : '✅ 已啟用'
+  console.log(`${status}: ${node.data.label}`)
 }
 
 onMounted(() => {
@@ -339,6 +538,7 @@ onUnmounted(() => {
 
 // Properties panel
 const selectedNodeId = ref<string | null>(null)
+const selectedEdgeId = ref<string | null>(null)
 const selectedDef = computed(() => {
   const node = nodes.value.find(n => n.id === selectedNodeId.value)
   return node ? getNodeDef(node.data.nodeType) : null
@@ -354,12 +554,33 @@ function onConnect(connection: Connection) {
   edges.value = addEdge({ ...connection, animated: true }, edges.value)
 }
 
+function onEdgesChange(changes: any[]) {
+  // Handle edge changes (remove, add, update)
+  changes.forEach(change => {
+    if (change.type === 'remove') {
+      edges.value = edges.value.filter(e => e.id !== change.id)
+    }
+  })
+}
+
 function onNodeClick({ node }: { node: Node }) {
   selectedNodeId.value = node.id
+  selectedEdgeId.value = null  // Clear edge selection when selecting node
   const def = getNodeDef(node.data.nodeType)
   const defaults: Record<string, any> = {}
   def?.inputs?.forEach(f => { defaults[f.key] = node.data.config?.[f.key] ?? f.default ?? '' })
-  nodeData.value = { ...node.data.config, ...defaults }
+  nodeData.value = { ...defaults, ...node.data.config }
+}
+
+function onEdgeClick({ edge }: { edge: Edge }) {
+  selectedEdgeId.value = edge.id
+  selectedNodeId.value = null  // Clear node selection when selecting edge
+}
+
+function onPaneClick() {
+  // Clear all selections when clicking on empty canvas
+  selectedNodeId.value = null
+  selectedEdgeId.value = null
 }
 
 function onCustomConfigUpdate(newConfig: Record<string, any>) {
@@ -373,6 +594,16 @@ const hiddenPortsFromConfig = computed<string[]>(() => {
   try { return JSON.parse(nodeData.value.hiddenPorts ?? '[]') } catch { return [] }
 })
 
+// Compute inputOrder from generic nodeData for PortVisibilityEditor
+const inputOrderFromConfig = computed<string[]>(() => {
+  try { return JSON.parse(nodeData.value.inputOrder ?? '[]') } catch { return [] }
+})
+
+// Compute outputOrder from generic nodeData for PortVisibilityEditor
+const outputOrderFromConfig = computed<string[]>(() => {
+  try { return JSON.parse(nodeData.value.outputOrder ?? '[]') } catch { return [] }
+})
+
 // Input ports that can appear as connection handles (no password / select types)
 const portableInputs = computed(() =>
   (selectedDef.value?.inputs || []).filter(f =>
@@ -382,12 +613,36 @@ const portableInputs = computed(() =>
 
 function onGenericHiddenPortsUpdate(hp: string[]) {
   nodeData.value = { ...nodeData.value, hiddenPorts: JSON.stringify(hp) }
+  updateNodeConfig()
 }
 
-watch(nodeData, (val) => {
-  const node = nodes.value.find(n => n.id === selectedNodeId.value)
-  if (node) node.data = { ...node.data, config: { ...val } }
-}, { deep: true })
+function onInputOrderUpdate(order: string[]) {
+  nodeData.value = { ...nodeData.value, inputOrder: JSON.stringify(order) }
+  updateNodeConfig()
+}
+
+function onOutputOrderUpdate(order: string[]) {
+  nodeData.value = { ...nodeData.value, outputOrder: JSON.stringify(order) }
+  updateNodeConfig()
+}
+
+function updateNodeConfig() {
+  if (!selectedNodeId.value) return
+
+  // Update using VueFlow API
+  updateNode(selectedNodeId.value, (node) => ({
+    ...node,
+    data: { ...node.data, config: { ...nodeData.value } }
+  }))
+
+  // Auto-save
+  setTimeout(() => {
+    store.saveWorkflow(wfId, nodes.value, edges.value)
+  }, 100)
+}
+
+// Watch nodeData for other changes (not from port order/visibility)
+// Removed auto-update here to avoid conflicts with updateNodeConfig()
 
 // Save
 const savedToast = ref(false)
@@ -403,6 +658,18 @@ async function onExecute() {
     // 先儲存
     store.saveWorkflow(wfId, nodes.value, edges.value)
 
+    // 🆕 收集快取資料（只收集開啟「使用快取」的節點）
+    const nodeCache: Record<string, any> = {}
+    for (const node of nodes.value) {
+      if (node.data.config?.useCachedResult) {
+        const cacheEntry = nodeCacheStore.getCacheResult(node.id)
+        if (cacheEntry) {
+          nodeCache[node.id] = cacheEntry.result
+          console.log('[Execute] Using cache for node:', node.id)
+        }
+      }
+    }
+
     // 轉換成執行格式
     const workflow: Workflow = {
       id: wfId,
@@ -411,7 +678,11 @@ async function onExecute() {
         id: n.id,
         type: n.data.nodeType,  // 真正的節點類型存在 data.nodeType
         position: n.position,
-        data: n.data.config || {}  // 只傳遞配置，不傳整個 data
+        data: {
+          ...(n.data.config || {}),  // 配置項
+          disabled: n.data.disabled,  // 停用狀態（重要！）
+          useCachedResult: n.data.config?.useCachedResult  // 快取標記
+        }
       })),
       edges: edges.value.map(e => ({
         id: e.id,
@@ -422,7 +693,7 @@ async function onExecute() {
       }))
     }
 
-    await executeWorkflow(workflow)
+    await executeWorkflow(workflow, nodeCache)
   } catch (error) {
     console.error('Failed to execute workflow:', error)
     alert('執行失敗: ' + (error instanceof Error ? error.message : String(error)))
@@ -616,5 +887,139 @@ function nodeColor(node: Node) {
 .slide-up-enter-from, .slide-up-leave-to {
   transform: translateY(100%);
   opacity: 0;
+}
+
+/* Edge highlighting styles */
+:deep(.vue-flow__edge.edge-highlighted path) {
+  stroke: var(--accent-cyan) !important;
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 0 4px var(--accent-cyan));
+}
+
+:deep(.vue-flow__edge.edge-executing path) {
+  stroke: lime !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 6px lime);
+  animation: pulse-edge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-edge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+:deep(.vue-flow__edge.edge-dimmed path) {
+  stroke: rgba(148, 163, 184, 0.25) !important;
+  stroke-width: 1.5px !important;
+}
+
+:deep(.vue-flow__edge.edge-dimmed .vue-flow__edge-text) {
+  opacity: 0.3;
+}
+
+/* Cache control */
+.cache-control {
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+}
+.cache-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.cache-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-card);
+  border: 1.5px solid var(--border);
+  transition: 0.3s;
+  border-radius: 20px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
+  background-color: var(--text-muted);
+  transition: 0.3s;
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: rgba(0, 255, 0, 0.2);
+  border-color: lime;
+}
+input:checked + .slider:before {
+  transform: translateX(16px);
+  background-color: lime;
+}
+input:disabled + .slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Workflow name editing */
+.topbar-title-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  min-width: 200px;
+}
+
+/* Copy button */
+.btn-copy {
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+.btn-copy:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 </style>
