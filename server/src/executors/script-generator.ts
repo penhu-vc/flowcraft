@@ -37,33 +37,49 @@ export async function executeScriptGenerator(
     config: Record<string, unknown>,
     emit: EmitFn
 ): Promise<{ result: string; script: string; keywords: string[] }> {
+    const rawConfig = config as unknown as ScriptGeneratorConfig
     const {
-        source,
         reference = '',
         aiProvider = 'gemini',
         aiApiKey = '',
         aiBaseUrl = '',
         model = 'gemini-2.0-flash',
         temperature = 1.0
-    } = config as unknown as ScriptGeneratorConfig
+    } = rawConfig
 
-    if (!source) throw new Error('Script Generator executor: source is required')
+    // 處理 source：可能是字串或物件
+    let source = rawConfig.source
+    if (typeof source === 'object' && source !== null) {
+        // 如果是物件，嘗試提取 result、script、yaml 或 content
+        const obj = source as Record<string, unknown>
+        source = (obj.result || obj.script || obj.yaml || obj.content || JSON.stringify(source)) as string
+    }
+    if (!source || typeof source !== 'string') {
+        throw new Error('Script Generator executor: source is required (需要提供來源素材)')
+    }
+
+    // 處理 reference：也可能是物件
+    let ref = reference
+    if (typeof ref === 'object' && ref !== null) {
+        const obj = ref as Record<string, unknown>
+        ref = (obj.result || obj.content || JSON.stringify(ref)) as string
+    }
 
     emit('node:log', { message: '🎬 劇本指令啟動（爆裂口播 v2）' })
     emit('node:log', { message: `AI Provider: ${aiProvider}` })
     emit('node:log', { message: `使用模型: ${model}` })
     emit('node:log', { message: `來源長度: ${source.length} 字元` })
 
-    if (reference) {
-        emit('node:log', { message: `📎 參考資料長度: ${reference.length} 字元` })
+    if (ref) {
+        emit('node:log', { message: `📎 參考資料長度: ${ref.length} 字元` })
     }
 
     // 組合 prompt
     let prompt = SCRIPT_PROMPT_TEMPLATE.replace('{{SOURCE}}', source)
 
     // 處理參考資料
-    if (reference) {
-        const referenceContent = `${reference}\n\n可參考上述資料來豐富劇本內容（但要加上「*」號標記）。`
+    if (ref) {
+        const referenceContent = `${ref}\n\n可參考上述資料來豐富劇本內容（但要加上「*」號標記）。`
         prompt = prompt.replace('{{REFERENCE}}', referenceContent)
     } else {
         // 沒有參考資料時，移除整個參考資料區塊
