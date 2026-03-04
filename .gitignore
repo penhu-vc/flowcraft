@@ -33,3 +33,6 @@ server/session.json
 
 # Temp files
 /tmp/flowcraft-*.log
+
+# Runtime data (每個人有自己的本地資料)
+server/data/workflows.json
