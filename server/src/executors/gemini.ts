@@ -1,9 +1,10 @@
 /**
  * Gemini Executor
- * Uses Google Vertex AI Gemini API
+ * Supports both API Key mode and GCP Vertex AI mode
  */
 
 import { VertexAI } from '@google-cloud/vertexai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 
@@ -17,21 +18,119 @@ export interface GeminiConfig {
     maxTokens?: number      // Default: 8192
 }
 
-// 讀取 GCP 憑證
-function loadGCPCredentials(): { projectId: string; location: string } {
-    // 優先使用環境變數指定的憑證檔案
-    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
-        || join(__dirname, '../../data/gcp-credentials.json')
+const GEMINI_SETTINGS_FILE = join(__dirname, '../../data/gemini-settings.json')
+const GCP_CREDENTIALS_FILE = join(__dirname, '../../data/gcp-credentials.json')
+
+// 判斷使用哪種模式
+function getGeminiMode(): 'apiKey' | 'gcp' {
+    // 優先檢查環境變數
+    if (process.env.GEMINI_API_KEY) {
+        return 'apiKey'
+    }
+
+    // 檢查設定檔
+    if (existsSync(GEMINI_SETTINGS_FILE)) {
+        try {
+            const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf8'))
+            if (settings.mode === 'gcp' && existsSync(GCP_CREDENTIALS_FILE)) {
+                return 'gcp'
+            }
+            if (settings.apiKey) {
+                return 'apiKey'
+            }
+        } catch (e) {
+            // 忽略錯誤
+        }
+    }
+
+    // 預設檢查 GCP 憑證
+    if (existsSync(GCP_CREDENTIALS_FILE)) {
+        return 'gcp'
+    }
+
+    throw new Error('Gemini 未設定！請到「設定」頁面設定 API Key 或匯入 GCP 憑證。')
+}
+
+// 使用 API Key 模式呼叫 Gemini
+async function callWithApiKey(
+    config: GeminiConfig,
+    emit: EmitFn
+): Promise<string> {
+    const apiKey = process.env.GEMINI_API_KEY || (() => {
+        if (existsSync(GEMINI_SETTINGS_FILE)) {
+            const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf8'))
+            return settings.apiKey
+        }
+        throw new Error('API Key 未設定')
+    })()
+
+    emit('node:log', { message: '使用模式: API Key' })
+    emit('node:log', { message: `使用模型: ${config.model}` })
+
+    const genAI = new GoogleGenerativeAI(apiKey)
+
+    const generativeModel = genAI.getGenerativeModel({
+        model: config.model || 'gemini-2.0-flash-exp',
+        systemInstruction: config.systemPrompt || undefined,
+        generationConfig: {
+            temperature: config.temperature,
+            maxOutputTokens: config.maxTokens
+        }
+    })
+
+    const result = await generativeModel.generateContent(config.prompt)
+    const response = result.response
+    const text = response.text()
+
+    if (!text) {
+        throw new Error('Gemini 未返回有效回應')
+    }
+
+    return text
+}
+
+// 使用 GCP Vertex AI 模式呼叫 Gemini
+async function callWithGCP(
+    config: GeminiConfig,
+    emit: EmitFn
+): Promise<string> {
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
 
     if (!existsSync(credentialsPath)) {
         throw new Error('GCP 憑證未設定！請到「設定」頁面匯入 GCP 憑證 JSON 檔案。')
     }
 
     const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8'))
-    return {
-        projectId: credentials.project_id,
-        location: 'us-central1'  // 預設區域
+    const projectId = credentials.project_id
+    const location = 'us-central1'
+
+    emit('node:log', { message: '使用模式: GCP Vertex AI' })
+    emit('node:log', { message: `使用模型: ${config.model}` })
+    emit('node:log', { message: `區域: ${location}` })
+
+    const vertexAI = new VertexAI({
+        project: projectId,
+        location: location
+    })
+
+    const generativeModel = vertexAI.getGenerativeModel({
+        model: config.model || 'gemini-2.0-flash-exp',
+        systemInstruction: config.systemPrompt || undefined,
+        generationConfig: {
+            temperature: config.temperature,
+            maxOutputTokens: config.maxTokens
+        }
+    })
+
+    const result = await generativeModel.generateContent(config.prompt)
+    const response = result.response
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+    if (!text) {
+        throw new Error('Gemini 未返回有效回應')
     }
+
+    return text
 }
 
 export async function executeGemini(
@@ -50,26 +149,13 @@ export async function executeGemini(
 
     emit('node:log', { message: '初始化 Gemini API...' })
 
-    // 讀取 GCP 憑證
-    const { projectId, location } = loadGCPCredentials()
-
-    emit('node:log', { message: `使用模型: ${model}` })
-    emit('node:log', { message: `區域: ${location}` })
-
-    // 初始化 Vertex AI
-    const vertexAI = new VertexAI({
-        project: projectId,
-        location: location
-    })
-
-    const generativeModel = vertexAI.getGenerativeModel({
-        model: model,
-        systemInstruction: systemPrompt || undefined,
-        generationConfig: {
-            temperature: temperature,
-            maxOutputTokens: maxTokens
-        }
-    })
+    const geminiConfig: GeminiConfig = {
+        prompt,
+        systemPrompt,
+        model,
+        temperature,
+        maxTokens
+    }
 
     emit('node:log', { message: '發送請求...' })
     emit('node:log', { message: `Prompt 長度: ${prompt.length} 字元` })
@@ -77,7 +163,10 @@ export async function executeGemini(
         emit('node:log', { message: `System Prompt 長度: ${systemPrompt.length} 字元` })
     }
 
-    // 自動重試機制（針對 429 錯誤）
+    // 判斷使用哪種模式
+    const mode = getGeminiMode()
+
+    // 自動重試機制
     const MAX_RETRIES = 3
     let lastError: any = null
 
@@ -87,13 +176,9 @@ export async function executeGemini(
                 emit('node:log', { message: `🔄 重試第 ${attempt - 1} 次...` })
             }
 
-            const result = await generativeModel.generateContent(prompt)
-            const response = result.response
-            const text = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
-
-            if (!text) {
-                throw new Error('Gemini 未返回有效回應')
-            }
+            const text = mode === 'apiKey'
+                ? await callWithApiKey(geminiConfig, emit)
+                : await callWithGCP(geminiConfig, emit)
 
             emit('node:log', { message: `✅ 完成 (${text.length} 字元)` })
 
@@ -107,48 +192,36 @@ export async function executeGemini(
             const is429 = errorMsg.includes('429') || errorMsg.includes('Too Many Requests') || errorMsg.includes('RESOURCE_EXHAUSTED')
 
             if (is429 && attempt < MAX_RETRIES) {
-                // Exponential backoff: 2s, 4s, 8s
                 const waitTime = Math.pow(2, attempt) * 1000
                 emit('node:log', { message: `⚠️ API 配額限制 (429)，等待 ${waitTime / 1000} 秒後重試...` })
                 await new Promise(resolve => setTimeout(resolve, waitTime))
                 continue
             }
 
-            // 不是 429 錯誤，或已達重試上限，直接拋出
             emit('node:log', { message: `❌ Gemini API 錯誤: ${errorMsg}` })
             break
         }
     }
 
-    // 所有重試都失敗，拋出最後的錯誤
+    // 所有重試都失敗
     if (lastError) {
-
         const errorMsg = lastError.message || String(lastError)
 
-        // 如果是 429 錯誤
         if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
             emit('node:log', { message: '⚠️ API 配額耗盡，建議解決方案：' })
             emit('node:log', { message: '• 等待 1-2 分鐘後再執行' })
-            emit('node:log', { message: '• 或到「設定」頁面切換到另一個 GCP 帳號' })
-            emit('node:log', { message: '• 或到 GCP Console 申請提高配額' })
+            emit('node:log', { message: '• 或到「設定」頁面切換模式或帳號' })
         }
 
-        // 如果是 500 錯誤，提供診斷資訊
         if (errorMsg.includes('500') || errorMsg.includes('INTERNAL')) {
             emit('node:log', { message: '⚠️ 這是 Google 伺服器內部錯誤，可能原因：' })
             emit('node:log', { message: '1. Gemini 2.0 experimental 模型不穩定' })
             emit('node:log', { message: '2. Prompt 內容觸發安全過濾' })
-            emit('node:log', { message: '3. API 配額或權限問題' })
-            emit('node:log', { message: '' })
-            emit('node:log', { message: '建議解決方案：' })
-            emit('node:log', { message: '• 稍後重試（5-10 分鐘）' })
-            emit('node:log', { message: '• 改用穩定版本：gemini-2.0-flash 或 gemini-2.5-flash' })
-            emit('node:log', { message: '• 檢查 Prompt 內容是否有敏感資訊' })
+            emit('node:log', { message: '建議：稍後重試或改用穩定版本模型' })
         }
 
         throw lastError
     }
 
-    // 不應該執行到這裡
     throw new Error('Unexpected error in Gemini executor')
 }

@@ -43,3 +43,4 @@ server/session.json
 # Runtime data (每個人有自己的本地資料)
 server/data/workflows.json
 server/data/api-keys.json
+server/data/gemini-settings.json

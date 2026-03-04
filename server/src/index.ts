@@ -224,12 +224,70 @@ import { mkdirSync, unlinkSync } from 'fs'
 
 const SETTINGS_DIR = join(__dirname, '../data')
 const GCP_CREDENTIALS_FILE = join(SETTINGS_DIR, 'gcp-credentials.json')
+const GEMINI_SETTINGS_FILE = join(SETTINGS_DIR, 'gemini-settings.json')
 const API_KEYS_FILE = join(SETTINGS_DIR, 'api-keys.json')
 
 // 確保 data 目錄存在
 if (!existsSync(SETTINGS_DIR)) {
     mkdirSync(SETTINGS_DIR, { recursive: true })
 }
+
+// 檢查 Gemini 設定狀態（統一入口）
+app.get('/api/settings/gemini/status', (_req, res) => {
+    try {
+        // 讀取 Gemini 設定
+        let settings = { mode: 'apiKey', apiKey: '' }
+        if (existsSync(GEMINI_SETTINGS_FILE)) {
+            settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+        }
+
+        const hasApiKey = !!settings.apiKey
+        const hasGcp = existsSync(GCP_CREDENTIALS_FILE)
+
+        let gcpInfo = null
+        if (hasGcp) {
+            const creds = JSON.parse(readFileSync(GCP_CREDENTIALS_FILE, 'utf-8'))
+            gcpInfo = {
+                projectId: creds.project_id,
+                clientEmail: creds.client_email
+            }
+        }
+
+        res.json({
+            ok: true,
+            mode: settings.mode,
+            hasApiKey,
+            hasGcp,
+            maskedKey: hasApiKey ? '****' + settings.apiKey.slice(-4) : '',
+            gcpInfo
+        })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 儲存 Gemini API Key
+app.post('/api/settings/gemini/api-key', (req, res) => {
+    try {
+        const { apiKey } = req.body
+        if (!apiKey || typeof apiKey !== 'string') {
+            return res.status(400).json({ ok: false, error: '請提供有效的 API Key' })
+        }
+
+        // 儲存設定
+        const settings = { mode: 'apiKey', apiKey }
+        writeFileSync(GEMINI_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8')
+
+        // 設定環境變數
+        process.env.GEMINI_API_KEY = apiKey
+
+        res.json({ ok: true, message: 'Gemini API Key 已儲存' })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
 
 // 檢查 GCP 憑證狀態
 app.get('/api/settings/gcp/status', (_req, res) => {
@@ -264,6 +322,15 @@ app.post('/api/settings/gcp/credentials', (req, res) => {
         }
 
         writeFileSync(GCP_CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), 'utf-8')
+
+        // 更新 Gemini 設定為 GCP 模式
+        const settings = { mode: 'gcp', apiKey: '' }
+        if (existsSync(GEMINI_SETTINGS_FILE)) {
+            const existing = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+            settings.apiKey = existing.apiKey || ''
+        }
+        settings.mode = 'gcp'
+        writeFileSync(GEMINI_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8')
 
         // 設定環境變數讓 Gemini executor 使用
         process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
@@ -349,6 +416,19 @@ app.post('/api/settings/api-keys', (req, res) => {
 
 // 啟動時載入設定
 function loadSettings() {
+    // 載入 Gemini 設定
+    if (existsSync(GEMINI_SETTINGS_FILE)) {
+        try {
+            const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+            if (settings.apiKey) {
+                process.env.GEMINI_API_KEY = settings.apiKey
+                console.log('✅ Gemini API Key loaded')
+            }
+        } catch (e) {
+            // 忽略錯誤
+        }
+    }
+
     // 載入 GCP 憑證
     if (existsSync(GCP_CREDENTIALS_FILE)) {
         process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
