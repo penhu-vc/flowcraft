@@ -17,6 +17,12 @@ dist-ssr
 .env.local
 .env.*.local
 
+# GCP 憑證 (絕對不要上傳！)
+*credentials*.json
+gcp-*.json
+service-account*.json
+server/gcp-credentials.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
