@@ -12,13 +12,13 @@
       class="port-handle port-handle-in"
     />
 
+    <!-- Trigger Order Badge (outside node-card to avoid overflow:hidden) -->
+    <div v-if="isTrigger && data.triggerOrder" class="trigger-order-badge">
+      {{ data.triggerOrder }}
+    </div>
+
     <!-- ── Node card ── -->
     <div class="node-card" :style="{ borderColor: color }">
-      <!-- Trigger Order Badge -->
-      <div v-if="isTrigger && data.triggerOrder" class="trigger-order-badge">
-        {{ data.triggerOrder }}
-      </div>
-
       <!-- Header -->
       <div class="node-header" :style="{ background: color + '18', borderBottom: '1px solid ' + color + '33' }">
         <span class="node-icon" :style="{ background: color + '2a', color }">{{ data.icon }}</span>
