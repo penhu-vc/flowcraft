@@ -80,7 +80,9 @@ export async function executeYouTubeMonitor(
             channel_name: null,
             title: null,
             url: null,
-            thumbnail: null
+            thumbnail: null,
+            duration: null,
+            subscribers: null
         }
     }
 
@@ -152,7 +154,9 @@ export async function executeYouTubeMonitor(
             channel_name: null,
             title: null,
             url: null,
-            thumbnail: null
+            thumbnail: null,
+            duration: null,
+            subscribers: null
         }
     }
 
@@ -177,8 +181,8 @@ export async function executeYouTubeMonitor(
             title: null,
             url: null,
             thumbnail: null,
-            duration: 0,
-            subscribers: 0
+            duration: null,      // 修正：改為 null，讓 hasTriggerContent() 正確判斷為空
+            subscribers: null    // 修正：改為 null
         }
     }
 
