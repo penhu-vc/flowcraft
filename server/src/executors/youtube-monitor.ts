@@ -36,10 +36,10 @@ export async function executeYouTubeMonitor(
         emit('node:log', { message: '⚠️ 沒有設定監控頻道' })
         return {
             video: null,
-            channel_name: '',
-            title: '',
-            url: '',
-            thumbnail: ''
+            channel_name: null,
+            title: null,
+            url: null,
+            thumbnail: null
         }
     }
 
@@ -108,10 +108,10 @@ export async function executeYouTubeMonitor(
         emit('node:log', { message: '⚠️ 所有頻道都沒有找到影片' })
         return {
             video: null,
-            channel_name: '',
-            title: '',
-            url: '',
-            thumbnail: ''
+            channel_name: null,
+            title: null,
+            url: null,
+            thumbnail: null
         }
     }
 

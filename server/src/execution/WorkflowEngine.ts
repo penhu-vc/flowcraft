@@ -116,8 +116,14 @@ export class WorkflowEngine {
     // 🔀 檢查條件執行：如果所有輸入都是 null/undefined，跳過執行
     const hasAnyValidInput = Object.values(inputs).some(value => value !== null && value !== undefined)
     if (!hasAnyValidInput && Object.keys(inputs).length > 0) {
-      // 條件未滿足：跳過執行
-      this.nodeOutputs.set(node.id, {})
+      // 條件未滿足：跳過執行，輸出 null 讓下游也跳過
+      const nullOutputs: Record<string, null> = {}
+      const outgoingEdges = this.findOutgoingEdges(node.id)
+      for (const edge of outgoingEdges) {
+        const key = edge.sourceHandle.replace(/^out-/, '')
+        nullOutputs[key] = null
+      }
+      this.nodeOutputs.set(node.id, nullOutputs)
       this.completedNodes.add(node.id)
       this.pendingNodes.delete(node.id)
 
