@@ -259,7 +259,7 @@ function outputHandleStyle(i: number) {
 .trigger-order-badge {
   position: absolute;
   top: -8px;
-  left: -8px;
+  right: -8px;
   width: 24px;
   height: 24px;
   background: v-bind(color);
