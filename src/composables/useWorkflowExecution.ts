@@ -50,6 +50,20 @@ export function useWorkflowExecution() {
     socket.on('node:done', (data: any) => {
       console.log('[Node] Done:', data.nodeId)
 
+      // 🎬 檢查是否為腳本生成節點，顯示結果 Modal
+      if (data.nodeType === 'script-generator' && data.result) {
+        const script = data.result.script || data.result.result || ''
+        if (script && typeof script === 'string' && script.length > 0) {
+          executionStore.showScriptResult({
+            nodeId: data.nodeId,
+            nodeType: data.nodeType,
+            script,
+            keywords: data.result.keywords || [],
+            timestamp: new Date().toISOString()
+          })
+        }
+      }
+
       // 檢查是否需要寫入資料集
       if (data.result && data.result._writeToCollection) {
         const { collectionId, data: recordData } = data.result

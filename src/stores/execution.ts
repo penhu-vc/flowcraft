@@ -33,10 +33,22 @@ export interface Execution {
   nodes: Map<string, NodeExecution>
 }
 
+// 腳本結果 Modal 狀態
+export interface ScriptResult {
+  nodeId: string
+  nodeType: string
+  script: string
+  keywords?: string[]
+  timestamp: string
+}
+
 export const useExecutionStore = defineStore('execution', () => {
   // State
   const currentExecution = ref<Execution | null>(null)
   const executionHistory = ref<Execution[]>([])
+
+  // 腳本結果 Modal
+  const scriptResultModal = ref<ScriptResult | null>(null)
 
   // Computed
   const isRunning = computed(() => currentExecution.value?.status === 'running')
@@ -166,10 +178,20 @@ export const useExecutionStore = defineStore('execution', () => {
     return currentExecution.value?.nodes.get(nodeId)
   }
 
+  // 腳本結果 Modal 相關方法
+  function showScriptResult(result: ScriptResult) {
+    scriptResultModal.value = result
+  }
+
+  function closeScriptResult() {
+    scriptResultModal.value = null
+  }
+
   return {
     // State
     currentExecution,
     executionHistory,
+    scriptResultModal,
 
     // Computed
     isRunning,
@@ -184,6 +206,8 @@ export const useExecutionStore = defineStore('execution', () => {
     completeExecution,
     failExecution,
     clearExecution,
-    getNodeExecution
+    getNodeExecution,
+    showScriptResult,
+    closeScriptResult
   }
 })
