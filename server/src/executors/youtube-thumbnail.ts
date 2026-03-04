@@ -116,11 +116,21 @@ export async function executeYouTubeThumbnail(
     config: Record<string, unknown>,
     emit: EmitFn
 ): Promise<{ thumbnail: string; downloadPath: string; photo: string; videoId?: string }> {
-    const { input, savePath = '/tmp/yt-thumbnails' } = config as unknown as YouTubeThumbnailConfig
+    const rawInput = config.input
+    const savePath = (config.savePath as string) || '/tmp/yt-thumbnails'
 
-    if (!input) {
-        throw new Error('YouTube Thumbnail: input is required (YouTube URL 或縮圖 URL)')
+    // 如果 input 不是字串（上游可能傳了 null 或物件），直接輸出 null
+    if (!rawInput || typeof rawInput !== 'string') {
+        emit('node:log', { message: `⏭️ input 無效（${typeof rawInput}），跳過` })
+        return {
+            thumbnail: '',
+            downloadPath: '',
+            photo: '',
+            videoId: undefined
+        }
     }
+
+    const input = rawInput
 
     emit('node:log', { message: '📸 YouTube 封面下載器' })
     emit('node:log', { message: `輸入: ${input}` })

@@ -134,11 +134,21 @@ export async function executeYouTubeSubtitle(
     onSuccess: string | null;  // 直接輸出字幕文本（字串）
     onFailure: string | null;  // 直接輸出網址（字串）
 }> {
-    const { url, language = 'auto' } = config as unknown as YouTubeSubtitleConfig
+    const rawUrl = config.url
+    const language = (config.language as string) || 'auto'
 
-    if (!url) {
-        throw new Error('YouTube Subtitle: url is required')
+    // 如果 url 不是字串（上游可能傳了 null 或物件），直接輸出 null
+    if (!rawUrl || typeof rawUrl !== 'string') {
+        emit('node:log', { message: `⏭️ url 無效（${typeof rawUrl}），跳過` })
+        return {
+            success: false,
+            url: '',
+            onSuccess: null,
+            onFailure: null
+        }
     }
+
+    const url = rawUrl
 
     emit('node:log', { message: '📺 YouTube 字幕提取器（純文字，多重 fallback）' })
     emit('node:log', { message: `URL: ${url}` })

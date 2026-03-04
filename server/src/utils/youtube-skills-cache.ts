@@ -28,6 +28,7 @@ export interface YouTubeCache {
 
 // 提取 YouTube URL（標準化）
 export function normalizeYouTubeUrl(url: string): string | null {
+    if (!url || typeof url !== 'string') return null
     // 支援各種 YouTube URL 格式
     const patterns = [
         /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,

@@ -14,6 +14,7 @@ interface Video {
  * 從影片 URL 提取影片 ID
  */
 function extractVideoId(url: string): string | null {
+    if (!url || typeof url !== 'string') return null
     const patterns = [
         /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
         /youtube\.com\/embed\/([^&\n?#]+)/,
@@ -50,6 +51,7 @@ async function getChannelIdFromVideo(videoId: string): Promise<string | null> {
  * 從各種 URL 格式提取 channel ID
  */
 export async function extractChannelId(url: string): Promise<string | null> {
+    if (!url || typeof url !== 'string') return null
     // 1. Channel ID 格式：youtube.com/channel/UCxxxxxx
     const channelIdMatch = url.match(/youtube\.com\/channel\/([^\/\?&]+)/)
     if (channelIdMatch) return channelIdMatch[1]
@@ -121,6 +123,7 @@ export async function getRecentVideos(channelId: string): Promise<Video[]> {
  * 從任意 YouTube URL 獲取頻道最近影片
  */
 export async function getVideosFromUrl(url: string): Promise<Video[]> {
+    if (!url || typeof url !== 'string') return []
     // 先嘗試直接用 URL 作為 channel ID（處理已知的 channel ID）
     const directChannelMatch = url.match(/(?:channel_id=|\/channel\/)([^\/\?&]+)/)
     if (directChannelMatch) {
