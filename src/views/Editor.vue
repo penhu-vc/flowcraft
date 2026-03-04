@@ -378,8 +378,10 @@ const triggerMode = ref<'fallback' | 'sequential'>(wf.value?.triggerMode || 'fal
 const triggerNodes = computed(() => {
   const triggerTypes = ['manual-trigger', 'youtube-monitor', 'youtube-recent-videos']
   return nodes.value.filter(node => {
-    const nodeDef = getNodeDef(node.type)
-    return nodeDef?.category === 'trigger' || triggerTypes.includes(node.type)
+    // 使用 node.data.nodeType 來判斷（因為 node.type 通常是 'custom'）
+    const nodeType = node.data?.nodeType || node.type
+    const nodeDef = getNodeDef(nodeType)
+    return nodeDef?.category === 'trigger' || triggerTypes.includes(nodeType)
   })
 })
 const sortedTriggers = computed(() => {
