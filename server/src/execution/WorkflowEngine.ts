@@ -497,7 +497,8 @@ export class WorkflowEngine {
   private isTriggerNode(node: WorkflowNode): boolean {
     // 觸發器通常有 category: 'trigger' 或特定的 type
     const triggerTypes = ['manual-trigger', 'youtube-monitor', 'youtube-recent-videos']
-    return node.data.category === 'trigger' || triggerTypes.includes(node.type)
+    const nodeType = node.data?.nodeType || node.type
+    return node.data?.category === 'trigger' || triggerTypes.includes(nodeType)
   }
 
   /**
