@@ -15,7 +15,7 @@
     "description": "",
     "active": false,
     "createdAt": "2026-03-02T16:47:53.926Z",
-    "updatedAt": "2026-03-04T10:58:50.886Z",
+    "updatedAt": "2026-03-04T12:48:07.975Z",
     "nodes": [
       {
         "id": "youtube-monitor-1772542042015",
@@ -105,7 +105,7 @@
             "hiddenPorts": "[]",
             "visiblePorts": ""
           },
-          "disabled": true
+          "disabled": false
         },
         "events": {},
         "dragHandle": ".node-header"
@@ -415,8 +415,8 @@
               "type": "source",
               "nodeId": "segment-mining-1772553880862",
               "position": "right",
-              "x": 295.00008072640014,
-              "y": 64.00003794789211,
+              "x": 295,
+              "y": 64,
               "width": 11,
               "height": 11
             }
@@ -427,8 +427,8 @@
               "type": "target",
               "nodeId": "segment-mining-1772553880862",
               "position": "left",
-              "x": -6.00017610674922,
-              "y": 64.00003794789211,
+              "x": -6,
+              "y": 64,
               "width": 11,
               "height": 11
             },
@@ -437,8 +437,8 @@
               "type": "target",
               "nodeId": "segment-mining-1772553880862",
               "position": "left",
-              "x": -6.00017610674922,
-              "y": 88.00008383874328,
+              "x": -6,
+              "y": 88,
               "width": 11,
               "height": 11
             },
@@ -447,8 +447,8 @@
               "type": "target",
               "nodeId": "segment-mining-1772553880862",
               "position": "left",
-              "x": -6.00017610674922,
-              "y": 112.00012972959445,
+              "x": -6,
+              "y": 112,
               "width": 11,
               "height": 11
             }
@@ -475,7 +475,7 @@
             "aiBaseUrl": "",
             "model": "gemini-2.5-pro",
             "temperature": 0.3,
-            "useCachedResult": true
+            "useCachedResult": false
           },
           "disabled": false
         },
@@ -501,8 +501,8 @@
               "type": "source",
               "nodeId": "script-generator-1772553907526",
               "position": "right",
-              "x": 295.00028335290654,
-              "y": 64.00003794789211,
+              "x": 295,
+              "y": 64,
               "width": 11,
               "height": 11
             },
@@ -511,8 +511,8 @@
               "type": "source",
               "nodeId": "script-generator-1772553907526",
               "position": "right",
-              "x": 295.00028335290654,
-              "y": 88.00003318211668,
+              "x": 295,
+              "y": 88,
               "width": 11,
               "height": 11
             },
@@ -521,8 +521,8 @@
               "type": "source",
               "nodeId": "script-generator-1772553907526",
               "position": "right",
-              "x": 295.00028335290654,
-              "y": 112.00007907296785,
+              "x": 295,
+              "y": 112,
               "width": 11,
               "height": 11
             }
@@ -533,8 +533,8 @@
               "type": "target",
               "nodeId": "script-generator-1772553907526",
               "position": "left",
-              "x": -5.999973480242846,
-              "y": 64.00003794789211,
+              "x": -6,
+              "y": 64,
               "width": 11,
               "height": 11
             },
@@ -543,8 +543,8 @@
               "type": "target",
               "nodeId": "script-generator-1772553907526",
               "position": "left",
-              "x": -5.999973480242846,
-              "y": 88.00003318211668,
+              "x": -6,
+              "y": 88,
               "width": 11,
               "height": 11
             },
@@ -553,8 +553,8 @@
               "type": "target",
               "nodeId": "script-generator-1772553907526",
               "position": "left",
-              "x": -5.999973480242846,
-              "y": 112.00007907296785,
+              "x": -6,
+              "y": 112,
               "width": 11,
               "height": 11
             },
@@ -563,8 +563,8 @@
               "type": "target",
               "nodeId": "script-generator-1772553907526",
               "position": "left",
-              "x": -5.999973480242846,
-              "y": 136.00007430719242,
+              "x": -6,
+              "y": 136,
               "width": 11,
               "height": 11
             }
@@ -592,7 +592,7 @@
             "aiBaseUrl": "",
             "model": "gemini-2.5-pro",
             "temperature": 1,
-            "useCachedResult": true
+            "useCachedResult": false
           }
         },
         "events": {},

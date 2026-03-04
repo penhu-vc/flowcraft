@@ -11,6 +11,7 @@ import { executeExecutionLogger } from './executors/execution-logger'
 import { executeYouTubeSubtitle } from './executors/youtube-subtitle'
 import { executeYouTubeThumbnail } from './executors/youtube-thumbnail'
 import { executeYouTubeRecentVideos } from './executors/youtube-recent-videos'
+import { executeYouTubeMonitor } from './executors/youtube-monitor'
 
 type EmitFn = (event: string, data: unknown) => void
 
@@ -118,6 +119,11 @@ export async function executeNode(
             // YouTube Recent Videos Selector
             // YouTube 最近影片選擇器
             return executeYouTubeRecentVideos(config, emit)
+
+        case 'youtube-monitor':
+            // YouTube Monitor
+            // YouTube 頻道監控器
+            return executeYouTubeMonitor(config, emit)
 
         default:
             throw new Error(`No executor found for node type: ${nodeType}`)
