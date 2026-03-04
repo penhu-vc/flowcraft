@@ -3,7 +3,7 @@
  * 監控 YouTube 頻道，返回最新影片
  */
 
-import { getRecentVideos } from '../utils/youtube-utils'
+import { getRecentVideos, extractChannelId } from '../utils/youtube-utils'
 
 interface Channel {
     id: string
@@ -60,15 +60,40 @@ export async function executeYouTubeMonitor(
         try {
             emit('node:log', { message: `檢查頻道: ${channel.name}` })
 
-            // 使用 channel.id（可能是 @handle 或 channel ID）
-            const videos = await getRecentVideos(channel.id)
+            let channelId = channel.id
+
+            // 如果是 @handle 格式，需要轉換成 channel ID
+            if (channelId.startsWith('@')) {
+                emit('node:log', { message: `⚙️ 轉換 handle: ${channelId}` })
+
+                // 從 thumbnail URL 提取 video ID，再獲取 channel ID
+                if (channel.thumbnail) {
+                    const videoIdMatch = channel.thumbnail.match(/\/vi\/([^\/]+)\//)
+                    if (videoIdMatch) {
+                        const videoUrl = `https://www.youtube.com/watch?v=${videoIdMatch[1]}`
+                        const extractedChannelId = await extractChannelId(videoUrl)
+                        if (extractedChannelId) {
+                            channelId = extractedChannelId
+                            emit('node:log', { message: `✅ 轉換成功: ${channelId}` })
+                        } else {
+                            emit('node:log', { message: `⚠️ 無法轉換 handle，跳過此頻道` })
+                            continue
+                        }
+                    }
+                } else {
+                    emit('node:log', { message: `⚠️ 缺少 thumbnail，無法轉換 handle` })
+                    continue
+                }
+            }
+
+            const videos = await getRecentVideos(channelId)
 
             if (videos.length > 0) {
                 const latestVideo = videos[0]
                 allVideos.push({
                     video: latestVideo,
                     channelName: channel.name,
-                    channelId: channel.id
+                    channelId: channelId
                 })
                 emit('node:log', { message: `✅ ${channel.name}: ${latestVideo.title}` })
             } else {
