@@ -83,7 +83,10 @@ export async function executeNotebookLM(
         headless: false,
         channel: 'chrome'  // 使用系統安裝的 Chrome
     })
-    const context = await browser.newContext({ storageState })
+    const context = await browser.newContext({
+        storageState,
+        permissions: ['clipboard-read', 'clipboard-write']  // 自動允許剪貼簿存取
+    })
     const page = await context.newPage()
 
     try {
