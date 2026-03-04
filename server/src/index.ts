@@ -219,6 +219,157 @@ app.post('/api/telegram/webhook', async (req, res) => {
     }
 })
 
+// ── Settings: GCP Credentials ────────────────────────────────────
+import { mkdirSync, unlinkSync } from 'fs'
+
+const SETTINGS_DIR = join(__dirname, '../data')
+const GCP_CREDENTIALS_FILE = join(SETTINGS_DIR, 'gcp-credentials.json')
+const API_KEYS_FILE = join(SETTINGS_DIR, 'api-keys.json')
+
+// 確保 data 目錄存在
+if (!existsSync(SETTINGS_DIR)) {
+    mkdirSync(SETTINGS_DIR, { recursive: true })
+}
+
+// 檢查 GCP 憑證狀態
+app.get('/api/settings/gcp/status', (_req, res) => {
+    try {
+        if (!existsSync(GCP_CREDENTIALS_FILE)) {
+            return res.json({ ok: true, connected: false, message: '尚未設定 GCP 憑證' })
+        }
+
+        const data = readFileSync(GCP_CREDENTIALS_FILE, 'utf-8')
+        const creds = JSON.parse(data)
+
+        res.json({
+            ok: true,
+            connected: true,
+            info: {
+                projectId: creds.project_id,
+                clientEmail: creds.client_email
+            }
+        })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 儲存 GCP 憑證
+app.post('/api/settings/gcp/credentials', (req, res) => {
+    try {
+        const { credentials } = req.body
+        if (!credentials || !credentials.project_id || !credentials.private_key) {
+            return res.status(400).json({ ok: false, error: '無效的 GCP 憑證' })
+        }
+
+        writeFileSync(GCP_CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), 'utf-8')
+
+        // 設定環境變數讓 Gemini executor 使用
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
+
+        res.json({ ok: true, message: 'GCP 憑證已儲存' })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 移除 GCP 憑證
+app.delete('/api/settings/gcp/credentials', (_req, res) => {
+    try {
+        if (existsSync(GCP_CREDENTIALS_FILE)) {
+            unlinkSync(GCP_CREDENTIALS_FILE)
+        }
+        delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+        res.json({ ok: true, message: 'GCP 憑證已移除' })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 取得 API Keys
+app.get('/api/settings/api-keys', (_req, res) => {
+    try {
+        if (!existsSync(API_KEYS_FILE)) {
+            return res.json({ ok: true })
+        }
+
+        const data = readFileSync(API_KEYS_FILE, 'utf-8')
+        const keys = JSON.parse(data)
+
+        // 回傳時遮蔽部分內容
+        res.json({
+            ok: true,
+            telegramBotToken: keys.telegramBotToken ? '********' + keys.telegramBotToken.slice(-8) : '',
+            telegramChatId: keys.telegramChatId || ''
+        })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 儲存 API Keys
+app.post('/api/settings/api-keys', (req, res) => {
+    try {
+        const { telegramBotToken, telegramChatId } = req.body
+
+        // 讀取現有的設定（如果有的話）
+        let existing: any = {}
+        if (existsSync(API_KEYS_FILE)) {
+            existing = JSON.parse(readFileSync(API_KEYS_FILE, 'utf-8'))
+        }
+
+        // 如果傳入的是遮蔽值，保留原值
+        const newKeys = {
+            telegramBotToken: telegramBotToken?.startsWith('********')
+                ? existing.telegramBotToken
+                : telegramBotToken,
+            telegramChatId: telegramChatId || ''
+        }
+
+        writeFileSync(API_KEYS_FILE, JSON.stringify(newKeys, null, 2), 'utf-8')
+
+        // 更新環境變數
+        if (newKeys.telegramBotToken) {
+            process.env.TELEGRAM_BOT_TOKEN = newKeys.telegramBotToken
+        }
+        if (newKeys.telegramChatId) {
+            process.env.TELEGRAM_CHAT_ID = newKeys.telegramChatId
+        }
+
+        res.json({ ok: true, message: 'API Keys 已儲存' })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// 啟動時載入設定
+function loadSettings() {
+    // 載入 GCP 憑證
+    if (existsSync(GCP_CREDENTIALS_FILE)) {
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
+        console.log('✅ GCP credentials loaded')
+    }
+
+    // 載入 API Keys
+    if (existsSync(API_KEYS_FILE)) {
+        try {
+            const keys = JSON.parse(readFileSync(API_KEYS_FILE, 'utf-8'))
+            if (keys.telegramBotToken) process.env.TELEGRAM_BOT_TOKEN = keys.telegramBotToken
+            if (keys.telegramChatId) process.env.TELEGRAM_CHAT_ID = keys.telegramChatId
+            console.log('✅ API keys loaded')
+        } catch (e) {
+            // 忽略錯誤
+        }
+    }
+}
+
+loadSettings()
+
 // ── Socket.io ─────────────────────────────────────────────────────
 io.on('connection', (socket) => {
     console.log(`[ws] client connected: ${socket.id}`)

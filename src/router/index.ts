@@ -31,6 +31,10 @@ const router = createRouter({
       path: '/collections',
       component: () => import('../views/Collections.vue'),
     },
+    {
+      path: '/settings',
+      component: () => import('../views/Settings.vue'),
+    },
   ],
 })
 

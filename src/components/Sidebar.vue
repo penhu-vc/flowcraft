@@ -45,6 +45,7 @@ const navItems = [
   { path: '/collections', icon: '📚', label: '資料庫' },
   { path: '/monitor',   icon: '📡', label: '監控面板' },
   { path: '/nodes',     icon: '🧩', label: '節點目錄' },
+  { path: '/settings',  icon: '⚙️', label: '設定' },
 ]
 </script>
 
