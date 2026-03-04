@@ -26,6 +26,7 @@ async function main() {
 export async function startAuthFlow(): Promise<void> {
     const browser = await chromium.launch({
         headless: false,
+        channel: 'chrome',  // 使用系統安裝的 Chrome
         args: ['--start-maximized'],
     })
 

@@ -79,7 +79,10 @@ export async function executeNotebookLM(
 
     emit('node:log', { message: '啟動瀏覽器...' })
 
-    const browser = await chromium.launch({ headless: false })  // 改為可見模式
+    const browser = await chromium.launch({
+        headless: false,
+        channel: 'chrome'  // 使用系統安裝的 Chrome
+    })
     const context = await browser.newContext({ storageState })
     const page = await context.newPage()
 
