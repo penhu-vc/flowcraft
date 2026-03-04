@@ -620,10 +620,16 @@ export class WorkflowEngine {
     console.log('[WorkflowEngine] Total edges:', this.workflow.edges.length)
     console.log('[WorkflowEngine] Nodes:', this.workflow.nodes.map(n => ({ id: n.id, type: n.type })))
 
+    // 起始節點條件：
+    // 1. 沒有輸入邊（incoming edges）
+    // 2. 有輸出邊（outgoing edges）=> 確保節點連接到工作流中
+    // 孤立節點（沒有任何連線）不會被執行
     const startNodes = this.workflow.nodes.filter(node => {
       const incoming = this.findIncomingEdges(node.id)
-      console.log(`[WorkflowEngine] Node ${node.id} has ${incoming.length} incoming edges`)
-      return incoming.length === 0
+      const outgoing = this.findOutgoingEdges(node.id)
+      const isStartNode = incoming.length === 0 && outgoing.length > 0
+      console.log(`[WorkflowEngine] Node ${node.id}: incoming=${incoming.length}, outgoing=${outgoing.length}, isStart=${isStartNode}`)
+      return isStartNode
     })
 
     console.log('[WorkflowEngine] Start nodes found:', startNodes.length)
