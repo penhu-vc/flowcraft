@@ -252,10 +252,29 @@ async function onImportCredentials(e: Event) {
 
   try {
     const content = await file.text()
-    const json = JSON.parse(content)
 
-    if (!json.project_id || !json.client_email || !json.private_key) {
-      showMessage('無效的 GCP 憑證檔案', 'error')
+    // 移除 BOM 字元（某些編輯器會加入）
+    const cleanContent = content.replace(/^\uFEFF/, '')
+
+    let json: any
+    try {
+      json = JSON.parse(cleanContent)
+    } catch (parseErr) {
+      console.error('JSON parse error:', parseErr)
+      showMessage('JSON 格式錯誤，請確認檔案是有效的 JSON', 'error')
+      input.value = ''
+      return
+    }
+
+    // 檢查必要欄位
+    const missingFields: string[] = []
+    if (!json.project_id) missingFields.push('project_id')
+    if (!json.client_email) missingFields.push('client_email')
+    if (!json.private_key) missingFields.push('private_key')
+
+    if (missingFields.length > 0) {
+      showMessage(`缺少必要欄位: ${missingFields.join(', ')}`, 'error')
+      input.value = ''
       return
     }
 
@@ -273,7 +292,8 @@ async function onImportCredentials(e: Event) {
       showMessage(data.error || '儲存失敗', 'error')
     }
   } catch (err) {
-    showMessage('檔案格式錯誤', 'error')
+    console.error('Import error:', err)
+    showMessage('匯入失敗: ' + (err instanceof Error ? err.message : String(err)), 'error')
   }
 
   input.value = ''
