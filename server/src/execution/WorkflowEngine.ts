@@ -518,7 +518,23 @@ export class WorkflowEngine {
     if (result === null || result === undefined) return false
     if (result === '') return false
     if (Array.isArray(result) && result.length === 0) return false
-    if (typeof result === 'object' && Object.keys(result).length === 0) return false
+
+    // 檢查物件：如果所有值都是 null/undefined/空字串，視為無內容
+    if (typeof result === 'object' && result !== null) {
+      const values = Object.values(result)
+      if (values.length === 0) return false
+
+      // 檢查是否所有值都是 falsy（null, undefined, '', 0, false）
+      const hasAnyContent = values.some(v => {
+        if (v === null || v === undefined || v === '') return false
+        if (Array.isArray(v) && v.length === 0) return false
+        if (typeof v === 'object' && Object.keys(v).length === 0) return false
+        return true
+      })
+
+      return hasAnyContent
+    }
+
     return true
   }
 
