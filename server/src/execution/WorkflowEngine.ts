@@ -58,7 +58,8 @@ export class WorkflowEngine {
       }
 
       // 區分觸發器和一般起始節點
-      const triggers = this.sortTriggers(startNodes)
+      const allTriggers = startNodes.filter(node => this.isTriggerNode(node))
+      const triggers = this.sortTriggers(allTriggers)
       const nonTriggers = startNodes.filter(node => !this.isTriggerNode(node))
 
       // 如果有觸發器，根據模式執行

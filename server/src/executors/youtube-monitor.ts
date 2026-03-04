@@ -4,6 +4,8 @@
  */
 
 import { getRecentVideos, extractChannelId } from '../utils/youtube-utils'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { join } from 'path'
 
 interface Channel {
     id: string
@@ -15,11 +17,42 @@ interface Channel {
 
 type EmitFn = (event: string, data: unknown) => void
 
+// State 檔案路徑（記住已處理的影片）
+const STATE_FILE = join(process.cwd(), 'data', 'youtube-monitor-state.json')
+
+// 讀取上次處理的影片 ID
+function getLastProcessedVideoId(): string | null {
+    try {
+        if (existsSync(STATE_FILE)) {
+            const state = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
+            return state.lastVideoId || null
+        }
+    } catch (error) {
+        // ignore
+    }
+    return null
+}
+
+// 儲存已處理的影片 ID
+function saveLastProcessedVideoId(videoId: string): void {
+    try {
+        writeFileSync(STATE_FILE, JSON.stringify({ lastVideoId: videoId, updatedAt: new Date().toISOString() }))
+    } catch (error) {
+        // ignore
+    }
+}
+
 export async function executeYouTubeMonitor(
     config: Record<string, unknown>,
     emit: EmitFn
 ): Promise<unknown> {
     emit('node:log', { message: '🎬 YouTube Monitor 啟動' })
+
+    // 讀取上次處理的影片 ID
+    const lastProcessedVideoId = getLastProcessedVideoId()
+    if (lastProcessedVideoId) {
+        emit('node:log', { message: `📌 上次處理: ${lastProcessedVideoId}` })
+    }
 
     // 解析頻道列表
     const channelsJson = config.channels as string || '[]'
@@ -126,6 +159,24 @@ export async function executeYouTubeMonitor(
     const video = latest.video
 
     emit('node:log', { message: `🎯 最新影片: ${video.title}` })
+
+    // 檢查是否是新影片
+    if (video.videoId === lastProcessedVideoId) {
+        emit('node:log', { message: '⏸️ 此影片已處理過，沒有新影片' })
+        return {
+            video: null,
+            channel_name: null,
+            title: null,
+            url: null,
+            thumbnail: null,
+            duration: 0,
+            subscribers: 0
+        }
+    }
+
+    // 儲存新影片 ID
+    saveLastProcessedVideoId(video.videoId)
+    emit('node:log', { message: `✨ 發現新影片！ID: ${video.videoId}` })
 
     // 獲取縮圖 URL
     const thumbnailUrl = `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`
