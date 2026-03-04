@@ -14,6 +14,11 @@
 
     <!-- ── Node card ── -->
     <div class="node-card" :style="{ borderColor: color }">
+      <!-- Trigger Order Badge -->
+      <div v-if="isTrigger && data.triggerOrder" class="trigger-order-badge">
+        {{ data.triggerOrder }}
+      </div>
+
       <!-- Header -->
       <div class="node-header" :style="{ background: color + '18', borderBottom: '1px solid ' + color + '33' }">
         <span class="node-icon" :style="{ background: color + '2a', color }">{{ data.icon }}</span>
@@ -115,6 +120,7 @@ const categoryLabel = computed(() => {
   const label = CATEGORY_LABELS[props.data.category] || props.data.category
   return label.replace(/^.+?\s/, '')
 })
+const isTrigger = computed(() => props.data.category === 'trigger')
 
 // Hidden ports set by user in config panel
 const hiddenPorts = computed<string[]>(() => {
@@ -243,9 +249,30 @@ function outputHandleStyle(i: number) {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  position: relative;
 }
 .custom-node.selected .node-card {
   box-shadow: 0 0 0 2px v-bind(color), 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* Trigger Order Badge */
+.trigger-order-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 24px;
+  height: 24px;
+  background: v-bind(color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 10;
+  border: 2px solid var(--bg-primary);
 }
 
 /* Disabled state - grayscale */

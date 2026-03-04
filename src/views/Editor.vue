@@ -47,6 +47,42 @@
   <div class="editor-layout">
     <!-- Node Palette -->
     <div class="palette">
+      <!-- Workflow Settings -->
+      <div class="workflow-settings">
+        <div class="workflow-settings-header">⚙️ 工作流設定</div>
+        <div class="workflow-settings-body">
+          <div class="form-group-compact">
+            <label class="form-label-sm">觸發器運行模式</label>
+            <select class="form-select-sm" v-model="triggerMode" @change="onTriggerModeChange">
+              <option value="fallback">運行失敗時更換</option>
+              <option value="sequential">按順序觸發</option>
+            </select>
+            <div class="form-hint">
+              <span v-if="triggerMode === 'fallback'">依序嘗試觸發器，第一個成功就停止</span>
+              <span v-else>依序執行所有觸發器，每個都執行完整工作流</span>
+            </div>
+          </div>
+
+          <div class="form-group-compact" v-if="triggerNodes.length > 0">
+            <label class="form-label-sm">觸發器順序（{{ triggerNodes.length }} 個）</label>
+            <div class="trigger-list">
+              <div v-for="trigger in sortedTriggers" :key="trigger.id" class="trigger-item">
+                <input
+                  type="number"
+                  class="trigger-order-input"
+                  :value="trigger.data.triggerOrder || 999"
+                  @input="updateTriggerOrder(trigger.id, $event)"
+                  min="1"
+                  max="99"
+                />
+                <span class="trigger-icon">{{ trigger.data.icon || '▶️' }}</span>
+                <span class="trigger-name">{{ trigger.data.label || trigger.type }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="palette-search">
         <input class="form-input" v-model="search" placeholder="🔍 搜尋節點..." />
       </div>
@@ -337,6 +373,23 @@ const wf = computed(() => store.getWorkflow(wfId))
 const nodes = ref<Node[]>(wf.value?.nodes || [])
 const edges = ref<Edge[]>(wf.value?.edges || [])
 
+// 觸發器設定
+const triggerMode = ref<'fallback' | 'sequential'>(wf.value?.triggerMode || 'fallback')
+const triggerNodes = computed(() => {
+  const triggerTypes = ['manual-trigger', 'youtube-monitor', 'youtube-recent-videos']
+  return nodes.value.filter(node => {
+    const nodeDef = getNodeDef(node.type)
+    return nodeDef?.category === 'trigger' || triggerTypes.includes(node.type)
+  })
+})
+const sortedTriggers = computed(() => {
+  return [...triggerNodes.value].sort((a, b) => {
+    const orderA = a.data.triggerOrder || 999
+    const orderB = b.data.triggerOrder || 999
+    return orderA - orderB
+  })
+})
+
 // Sync nodes/edges when workflow changes (e.g., after save)
 watch(wf, (newWf) => {
   if (newWf && newWf.nodes && newWf.edges) {
@@ -403,6 +456,23 @@ async function copyScript() {
     setTimeout(() => toast.remove(), 2000)
   } catch (err) {
     console.error('Failed to copy script:', err)
+  }
+}
+
+// 觸發器設定相關函數
+function onTriggerModeChange() {
+  if (!wf.value) return
+  store.updateWorkflow(wfId, { ...wf.value, triggerMode: triggerMode.value })
+  store.saveWorkflow(wfId, nodes.value, edges.value)
+}
+
+function updateTriggerOrder(nodeId: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  const order = parseInt(input.value) || 999
+  const node = nodes.value.find(n => n.id === nodeId)
+  if (node) {
+    node.data.triggerOrder = order
+    store.saveWorkflow(wfId, nodes.value, edges.value)
   }
 }
 
@@ -795,6 +865,88 @@ function nodeColor(node: Node) {
   display: flex; flex-direction: column;
   overflow: hidden;
 }
+.workflow-settings {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.workflow-settings-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+}
+.workflow-settings-body {
+  padding: 12px;
+}
+.form-group-compact {
+  margin-bottom: 12px;
+}
+.form-group-compact:last-child {
+  margin-bottom: 0;
+}
+.form-label-sm {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.form-select-sm {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.form-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.trigger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.trigger-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.trigger-order-input {
+  width: 40px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.trigger-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.trigger-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .palette-search { padding: 12px; border-bottom: 1px solid var(--border); }
 .palette-body { flex: 1; overflow-y: auto; padding: 8px; }
 .palette-cat-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 8px 4px; }
