@@ -7,10 +7,14 @@ import { onMounted, onUnmounted } from 'vue'
 import { socketManager } from '../api/socket'
 import { runWorkflow, type Workflow } from '../api/workflow'
 import { useExecutionStore } from '../stores/execution'
+import { useCollectionStore } from '../stores/collection'
+import { useNodeCacheStore } from '../stores/nodeCache'
 import type { Socket } from 'socket.io-client'
 
 export function useWorkflowExecution() {
   const executionStore = useExecutionStore()
+  const collectionStore = useCollectionStore()
+  const nodeCacheStore = useNodeCacheStore()
   let socket: Socket | null = null
 
   /**
@@ -45,6 +49,41 @@ export function useWorkflowExecution() {
 
     socket.on('node:done', (data: any) => {
       console.log('[Node] Done:', data.nodeId)
+
+      // 檢查是否需要寫入資料集
+      if (data.result && data.result._writeToCollection) {
+        const { collectionId, data: recordData } = data.result
+        const workflowId = executionStore.currentExecution?.workflowId
+
+        console.log('[Collection] Writing to collection:', collectionId)
+        const success = collectionStore.appendRecord(
+          collectionId,
+          recordData,
+          workflowId,
+          data.nodeId
+        )
+
+        if (success) {
+          executionStore.addNodeLog(data.nodeId, '✅ 資料已寫入資料集')
+        } else {
+          executionStore.addNodeLog(data.nodeId, '⚠️ 資料集不存在或寫入失敗')
+        }
+      }
+
+      // 🆕 保存節點執行結果到快取（如果不是使用快取結果）
+      if (data.result && !data.cached) {
+        const workflowId = executionStore.currentExecution?.workflowId
+        if (workflowId) {
+          nodeCacheStore.setCacheResult(
+            data.nodeId,
+            workflowId,
+            data.result,
+            data.nodeType || 'unknown'
+          )
+          console.log('[Cache] Saved result for node:', data.nodeId)
+        }
+      }
+
       executionStore.updateNodeStatus(data.nodeId, 'completed', {
         output: data.result,
         duration: data.duration
@@ -94,9 +133,9 @@ export function useWorkflowExecution() {
   /**
    * 執行工作流
    */
-  async function executeWorkflow(workflow: Workflow) {
+  async function executeWorkflow(workflow: Workflow, nodeCache?: Record<string, any>) {
     try {
-      const result = await runWorkflow(workflow)
+      const result = await runWorkflow(workflow, nodeCache)
       console.log('Workflow started:', result.executionId)
       return result
     } catch (error) {

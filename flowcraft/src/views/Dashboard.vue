@@ -51,10 +51,40 @@
         @click="router.push(`/editor/${wf.id}`)"
       >
         <div class="card-header">
-          <span class="card-title" style="flex:1;truncate:ellipsis;">{{ wf.name }}</span>
-          <span :class="['badge', wf.active ? 'badge-active' : 'badge-inactive']">
-            {{ wf.active ? '● 執行中' : '○ 停用' }}
+          <span
+            v-if="editingId !== wf.id"
+            class="card-title"
+            style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          >
+            {{ wf.name }}
           </span>
+          <input
+            v-else
+            :ref="el => { if (el) editInputRef = el as HTMLInputElement }"
+            class="card-title-input"
+            v-model="editingName"
+            @blur="saveEdit(wf.id)"
+            @keyup.enter="saveEdit(wf.id)"
+            @keyup.esc="cancelEdit"
+            @click.stop
+            style="flex:1;"
+          />
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button
+              class="btn-copy-card"
+              @click.stop="copyName(wf.name)"
+              title="複製工作流名稱"
+            >📋</button>
+            <button
+              v-if="editingId !== wf.id"
+              class="btn-edit-card"
+              @click.stop="startEdit(wf.id, wf.name)"
+              title="編輯名稱"
+            >✎</button>
+            <span :class="['badge', wf.active ? 'badge-active' : 'badge-inactive']">
+              {{ wf.active ? '● 執行中' : '○ 停用' }}
+            </span>
+          </div>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
           <div style="font-size:12px;color:var(--text-muted);">{{ wf.description || '無描述' }}</div>
@@ -114,6 +144,48 @@ const showCreate = ref(false)
 const newName = ref('')
 const newDesc = ref('')
 
+// Workflow name editing
+const editingId = ref<string | null>(null)
+const editingName = ref('')
+let editInputRef: HTMLInputElement | null = null
+
+function startEdit(id: string, name: string) {
+  editingId.value = id
+  editingName.value = name
+  setTimeout(() => editInputRef?.focus(), 0)
+}
+
+function saveEdit(id: string) {
+  if (!editingId.value) return
+  const newName = editingName.value.trim()
+  const wf = store.getWorkflow(id)
+  if (wf && newName && newName !== wf.name) {
+    store.updateWorkflow(id, { ...wf, name: newName })
+  }
+  editingId.value = null
+  editingName.value = ''
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editingName.value = ''
+}
+
+async function copyName(name: string) {
+  const nameWithPrefix = `工作流 ${name}`
+  try {
+    await navigator.clipboard.writeText(nameWithPrefix)
+    // Show toast notification
+    const toast = document.createElement('div')
+    toast.textContent = '✅ 已複製'
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--accent-purple);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.3s ease;'
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+  } catch (err) {
+    console.error('Failed to copy:', err)
+  }
+}
+
 function doCreate() {
   if (!newName.value.trim()) return
   const wf = store.createWorkflow(newName.value.trim(), newDesc.value.trim())
@@ -161,5 +233,48 @@ function onImport(e: Event) {
   padding: 28px;
   width: 420px;
   max-width: 90vw;
+}
+
+/* Workflow name editing */
+.card-title-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-purple);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+
+/* Copy and edit buttons */
+.btn-copy-card, .btn-edit-card {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  opacity: 0.7;
+  color: var(--text-secondary);
+}
+.btn-copy-card:hover, .btn-edit-card:hover {
+  background: rgba(124, 58, 237, 0.15);
+  opacity: 1;
+  color: var(--accent-purple);
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 </style>

@@ -42,6 +42,17 @@ export const useExecutionStore = defineStore('execution', () => {
   const isRunning = computed(() => currentExecution.value?.status === 'running')
   const executionId = computed(() => currentExecution.value?.id)
 
+  // 獲取當前正在執行的節點ID
+  const runningNodeId = computed(() => {
+    if (!currentExecution.value) return null
+    for (const [nodeId, nodeExec] of currentExecution.value.nodes.entries()) {
+      if (nodeExec.status === 'running') {
+        return nodeId
+      }
+    }
+    return null
+  })
+
   // Actions
   function startExecution(executionId: string, workflowId: string) {
     console.log('[Store] startExecution called:', executionId, workflowId)
@@ -163,6 +174,7 @@ export const useExecutionStore = defineStore('execution', () => {
     // Computed
     isRunning,
     executionId,
+    runningNodeId,
 
     // Actions
     startExecution,

@@ -42,6 +42,7 @@ const store = useWorkflowStore()
 
 const navItems = [
   { path: '/dashboard', icon: '🏠', label: '工作流' },
+  { path: '/collections', icon: '📚', label: '資料庫' },
   { path: '/monitor',   icon: '📡', label: '監控面板' },
   { path: '/nodes',     icon: '🧩', label: '節點目錄' },
 ]

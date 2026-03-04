@@ -94,24 +94,64 @@ export async function executeGemini(
         emit('node:log', { message: `System Prompt 長度: ${systemPrompt.length} 字元` })
     }
 
-    try {
-        const result = await generativeModel.generateContent(prompt)
-        const response = result.response
-        const text = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    // 自動重試機制（針對 429 錯誤）
+    const MAX_RETRIES = 3
+    let lastError: any = null
 
-        if (!text) {
-            throw new Error('Gemini 未返回有效回應')
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 1) {
+                emit('node:log', { message: `🔄 重試第 ${attempt - 1} 次...` })
+            }
+
+            const result = await generativeModel.generateContent(prompt)
+            const response = result.response
+            const text = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+            if (!text) {
+                throw new Error('Gemini 未返回有效回應')
+            }
+
+            emit('node:log', { message: `✅ 完成 (${text.length} 字元)` })
+
+            return { result: text }
+
+        } catch (error: any) {
+            lastError = error
+            const errorMsg = error.message || String(error)
+
+            // 檢查是否為 429 錯誤
+            const is429 = errorMsg.includes('429') || errorMsg.includes('Too Many Requests') || errorMsg.includes('RESOURCE_EXHAUSTED')
+
+            if (is429 && attempt < MAX_RETRIES) {
+                // Exponential backoff: 2s, 4s, 8s
+                const waitTime = Math.pow(2, attempt) * 1000
+                emit('node:log', { message: `⚠️ API 配額限制 (429)，等待 ${waitTime / 1000} 秒後重試...` })
+                await new Promise(resolve => setTimeout(resolve, waitTime))
+                continue
+            }
+
+            // 不是 429 錯誤，或已達重試上限，直接拋出
+            emit('node:log', { message: `❌ Gemini API 錯誤: ${errorMsg}` })
+            break
+        }
+    }
+
+    // 所有重試都失敗，拋出最後的錯誤
+    if (lastError) {
+
+        const errorMsg = lastError.message || String(lastError)
+
+        // 如果是 429 錯誤
+        if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
+            emit('node:log', { message: '⚠️ API 配額耗盡，建議解決方案：' })
+            emit('node:log', { message: '• 等待 1-2 分鐘後再執行' })
+            emit('node:log', { message: '• 或切換到另一個 GCP 帳號（yaja/penhu）' })
+            emit('node:log', { message: '• 或到 GCP Console 申請提高配額' })
         }
 
-        emit('node:log', { message: `✅ 完成 (${text.length} 字元)` })
-
-        return { result: text }
-
-    } catch (error: any) {
-        emit('node:log', { message: `❌ Gemini API 錯誤: ${error.message || error}` })
-
         // 如果是 500 錯誤，提供診斷資訊
-        if (error.message?.includes('500') || error.message?.includes('INTERNAL')) {
+        if (errorMsg.includes('500') || errorMsg.includes('INTERNAL')) {
             emit('node:log', { message: '⚠️ 這是 Google 伺服器內部錯誤，可能原因：' })
             emit('node:log', { message: '1. Gemini 2.0 experimental 模型不穩定' })
             emit('node:log', { message: '2. Prompt 內容觸發安全過濾' })
@@ -123,6 +163,9 @@ export async function executeGemini(
             emit('node:log', { message: '• 檢查 Prompt 內容是否有敏感資訊' })
         }
 
-        throw error
+        throw lastError
     }
+
+    // 不應該執行到這裡
+    throw new Error('Unexpected error in Gemini executor')
 }

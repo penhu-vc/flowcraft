@@ -27,7 +27,8 @@ export class WorkflowEngine {
   constructor(
     private workflow: Workflow,
     private executionId: string,
-    private emit: EmitFn
+    private emit: EmitFn,
+    private nodeCache: Record<string, any> = {}
   ) {
     this.execution = {
       id: executionId,
@@ -112,6 +113,56 @@ export class WorkflowEngine {
     // 準備輸入資料
     const inputs = this.prepareInputs(node.id)
 
+    // 🔀 檢查條件執行：如果所有輸入都是 null/undefined，跳過執行
+    const hasAnyValidInput = Object.values(inputs).some(value => value !== null && value !== undefined)
+    if (!hasAnyValidInput && Object.keys(inputs).length > 0) {
+      // 條件未滿足：跳過執行
+      this.nodeOutputs.set(node.id, {})
+      this.completedNodes.add(node.id)
+      this.pendingNodes.delete(node.id)
+
+      nodeExecution.status = 'skipped'
+      nodeExecution.completedAt = new Date().toISOString()
+      nodeExecution.duration = 0
+
+      this.emit('node:skipped', {
+        executionId: this.executionId,
+        nodeId: node.id,
+        nodeType: node.type
+      })
+      this.emit('node:log', {
+        executionId: this.executionId,
+        nodeId: node.id,
+        message: '⏭️ 跳過執行（條件未滿足：所有輸入為 null）'
+      })
+
+      // 觸發下游節點
+      await this.triggerDownstream(node.id)
+      return
+    }
+
+    // 🚫 檢查節點是否被停用
+    if (node.data.disabled === true) {
+      // 停用的節點：跳過執行，但傳遞上游資料（passthrough）
+      this.nodeOutputs.set(node.id, inputs)
+      this.completedNodes.add(node.id)
+      this.pendingNodes.delete(node.id)
+
+      nodeExecution.status = 'skipped'
+      nodeExecution.completedAt = new Date().toISOString()
+      nodeExecution.duration = 0
+
+      this.emit('node:skipped', {
+        executionId: this.executionId,
+        nodeId: node.id,
+        nodeType: node.type
+      })
+
+      // 觸發下游節點
+      await this.triggerDownstream(node.id)
+      return
+    }
+
     // 發送開始事件
     this.emit('node:start', {
       executionId: this.executionId,
@@ -120,6 +171,39 @@ export class WorkflowEngine {
     })
 
     try {
+      // ⚡ 檢查是否使用快取結果
+      if (node.data.useCachedResult && this.nodeCache[node.id]) {
+        const cachedResult = this.nodeCache[node.id]
+
+        this.emit('node:log', {
+          executionId: this.executionId,
+          nodeId: node.id,
+          message: `⚡ 使用快取結果（跳過執行）`
+        })
+
+        // 直接使用快取結果
+        this.nodeOutputs.set(node.id, cachedResult)
+        this.completedNodes.add(node.id)
+        this.pendingNodes.delete(node.id)
+
+        nodeExecution.status = 'completed'
+        nodeExecution.completedAt = new Date().toISOString()
+        nodeExecution.output = cachedResult
+        nodeExecution.duration = 0  // 快取結果執行時間為 0
+
+        this.emit('node:done', {
+          executionId: this.executionId,
+          nodeId: node.id,
+          result: cachedResult,
+          duration: 0,
+          cached: true
+        })
+
+        // 觸發下游節點
+        await this.triggerDownstream(node.id)
+        return
+      }
+
       // 執行節點邏輯
       const result = await executeNode(
         node.type,
@@ -209,9 +293,16 @@ export class WorkflowEngine {
    */
   private prepareInputs(nodeId: string): Record<string, any> {
     const incomingEdges = this.findIncomingEdges(nodeId)
+    const targetNode = this.findNodeById(nodeId)
     const inputs: Record<string, any> = {}
     let collectedMetadata: Record<string, any> = {}
 
+    // 🆕 如果目標節點是 execution-logger，使用嵌套結構
+    if (targetNode?.data?.nodeType === 'execution-logger') {
+      return this.prepareExecutionLoggerInputs(nodeId, incomingEdges)
+    }
+
+    // 原本的邏輯（其他節點）
     for (const edge of incomingEdges) {
       const upstreamOutput = this.nodeOutputs.get(edge.source)
       if (upstreamOutput) {
@@ -238,12 +329,31 @@ export class WorkflowEngine {
 
         // 傳遞 edge 指定的資料（強連結）
         if (sourceKey in upstreamOutput) {
-          inputs[targetKey] = upstreamOutput[sourceKey]
-          this.emit('node:log', {
-            executionId: this.executionId,
-            nodeId: nodeId,
-            message: `[prepareInputs] ✓ Mapped: ${sourceKey} → ${targetKey}, value: ${String(upstreamOutput[sourceKey]).substring(0, 50)}...`
-          })
+          const value = upstreamOutput[sourceKey]
+
+          // 如果同一個 targetKey 已經有值，合併成物件
+          if (targetKey in inputs) {
+            // 如果已經是物件，合併新欄位
+            if (typeof inputs[targetKey] === 'object' && !Array.isArray(inputs[targetKey])) {
+              inputs[targetKey] = { ...inputs[targetKey], [sourceKey]: value }
+            } else {
+              // 否則轉成物件格式
+              const oldValue = inputs[targetKey]
+              inputs[targetKey] = { _previous: oldValue, [sourceKey]: value }
+            }
+            this.emit('node:log', {
+              executionId: this.executionId,
+              nodeId: nodeId,
+              message: `[prepareInputs] ✓ Merged: ${sourceKey} → ${targetKey} (multi-input)`
+            })
+          } else {
+            inputs[targetKey] = value
+            this.emit('node:log', {
+              executionId: this.executionId,
+              nodeId: nodeId,
+              message: `[prepareInputs] ✓ Mapped: ${sourceKey} → ${targetKey}, value: ${String(value).substring(0, 50)}...`
+            })
+          }
         } else {
           this.emit('node:log', {
             executionId: this.executionId,
@@ -261,6 +371,97 @@ export class WorkflowEngine {
 
     // 合併 metadata 到 inputs（不覆蓋已有的 inputs）
     return { ...collectedMetadata, ...inputs }
+  }
+
+  /**
+   * 🆕 為 Execution Logger 準備嵌套結構的輸入資料
+   */
+  private prepareExecutionLoggerInputs(nodeId: string, incomingEdges: WorkflowEdge[]): Record<string, any> {
+    const nodeDataMap = new Map<string, any>()  // nodeId -> { nodeType, label, outputs }
+
+    this.emit('node:log', {
+      executionId: this.executionId,
+      nodeId: nodeId,
+      message: `[ExecutionLogger] 使用嵌套結構模式`
+    })
+
+    // 收集所有上游節點的輸出
+    for (const edge of incomingEdges) {
+      const upstreamOutput = this.nodeOutputs.get(edge.source)
+      const sourceNode = this.findNodeById(edge.source)
+
+      if (!upstreamOutput || !sourceNode) continue
+
+      const sourceKey = edge.sourceHandle.replace(/^out-/, '')
+
+      // 初始化節點資料結構
+      if (!nodeDataMap.has(edge.source)) {
+        nodeDataMap.set(edge.source, {
+          nodeType: sourceNode.data.nodeType,
+          label: sourceNode.data.label,
+          outputs: {}
+        })
+      }
+
+      // 收集輸出欄位
+      if (sourceKey in upstreamOutput) {
+        const nodeData = nodeDataMap.get(edge.source)!
+        nodeData.outputs[sourceKey] = upstreamOutput[sourceKey]
+
+        this.emit('node:log', {
+          executionId: this.executionId,
+          nodeId: nodeId,
+          message: `[ExecutionLogger] 收集: ${sourceNode.data.label} (${edge.source}) → ${sourceKey}`
+        })
+      }
+    }
+
+    // 組裝最終資料結構
+    const data: Record<string, any> = {}
+    const index: Record<string, any> = {}
+
+    for (const [sourceNodeId, nodeData] of nodeDataMap) {
+      data[sourceNodeId] = nodeData
+
+      // 自動建立快速索引
+      for (const [key, value] of Object.entries(nodeData.outputs)) {
+        if (this.isIndexableField(key)) {
+          index[key] = value
+          this.emit('node:log', {
+            executionId: this.executionId,
+            nodeId: nodeId,
+            message: `[ExecutionLogger] 索引欄位: ${key}`
+          })
+        }
+      }
+    }
+
+    data._index = index
+
+    this.emit('node:log', {
+      executionId: this.executionId,
+      nodeId: nodeId,
+      message: `[ExecutionLogger] ✓ 收集 ${nodeDataMap.size} 個節點，索引 ${Object.keys(index).length} 個欄位`
+    })
+
+    return { data }
+  }
+
+  /**
+   * 🆕 判斷欄位是否應該加入快速索引
+   */
+  private isIndexableField(key: string): boolean {
+    const indexFields = [
+      'message_id',
+      'recordCollectionId',
+      'url',
+      'title',
+      'video',
+      'thumbnail',
+      'channel_name',
+      'notebook_url'
+    ]
+    return indexFields.includes(key)
   }
 
   // ── 輔助函數 ──────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import express from 'express'
 import { createServer } from 'http'
 import { Server as SocketIO } from 'socket.io'
 import cors from 'cors'
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { executeNode } from './executor'
 import { startAuthFlow } from './auth/saveSession'
@@ -46,7 +46,7 @@ app.post('/api/execute', async (req, res) => {
 
 // ── Execute workflow (NEW!) ───────────────────────────────────────
 app.post('/api/workflow/run', async (req, res) => {
-    const { workflow, socketId } = req.body
+    const { workflow, socketId, nodeCache } = req.body
 
     if (!workflow) {
         return res.status(400).json({ error: 'workflow is required' })
@@ -64,7 +64,7 @@ app.post('/api/workflow/run', async (req, res) => {
     }
 
     // 🔥 異步執行，不阻塞 HTTP 回應
-    executeWorkflowAsync(workflow, executionId, emit)
+    executeWorkflowAsync(workflow, executionId, emit, nodeCache || {})
 
     // 立即返回執行 ID
     res.json({
@@ -80,10 +80,11 @@ app.post('/api/workflow/run', async (req, res) => {
 async function executeWorkflowAsync(
     workflow: Workflow,
     executionId: string,
-    emit: (event: string, data: unknown) => void
+    emit: (event: string, data: unknown) => void,
+    nodeCache: Record<string, any> = {}
 ) {
     try {
-        const engine = new WorkflowEngine(workflow, executionId, emit)
+        const engine = new WorkflowEngine(workflow, executionId, emit, nodeCache)
         await engine.run()
     } catch (error) {
         console.error(`[${executionId}] Workflow execution failed:`, error)
@@ -109,6 +110,78 @@ app.get('/api/prompts/segment-mining', (_req, res) => {
     }
 })
 
+// ── Workflow Sync: 同步工作流到本地檔案 ────────────────────────────
+const WORKFLOWS_FILE = join(__dirname, '../data/workflows.json')
+
+app.post('/api/workflows/sync', (req, res) => {
+    try {
+        const { workflows } = req.body
+        if (!workflows || !Array.isArray(workflows)) {
+            return res.status(400).json({ ok: false, error: 'workflows array required' })
+        }
+
+        writeFileSync(WORKFLOWS_FILE, JSON.stringify(workflows, null, 2), 'utf-8')
+        res.json({ ok: true, message: 'Workflows synced to file', count: workflows.length })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/workflows', (_req, res) => {
+    try {
+        if (!existsSync(WORKFLOWS_FILE)) {
+            return res.json({ ok: true, workflows: [] })
+        }
+
+        const data = readFileSync(WORKFLOWS_FILE, 'utf-8')
+        const workflows = JSON.parse(data)
+        res.json({ ok: true, workflows })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/workflows/:id', (req, res) => {
+    try {
+        if (!existsSync(WORKFLOWS_FILE)) {
+            return res.status(404).json({ ok: false, error: 'Workflow not found' })
+        }
+
+        const data = readFileSync(WORKFLOWS_FILE, 'utf-8')
+        const workflows = JSON.parse(data)
+        const workflow = workflows.find((w: any) => w.id === req.params.id)
+
+        if (!workflow) {
+            return res.status(404).json({ ok: false, error: 'Workflow not found' })
+        }
+
+        res.json({ ok: true, workflow })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// ── Get YouTube channel recent videos ────────────────────────────
+import { getVideosFromUrl } from './utils/youtube-utils'
+
+app.get('/api/youtube/recent-videos', async (req, res) => {
+    try {
+        const { url } = req.query
+        if (!url || typeof url !== 'string') {
+            return res.status(400).json({ ok: false, error: 'URL parameter is required' })
+        }
+
+        const videos = await getVideosFromUrl(url)
+        res.json({ ok: true, videos })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
 // ── Start NotebookLM auth (open headed browser for manual login) ──
 app.post('/api/auth/notebooklm', async (_req, res) => {
     try {
@@ -116,6 +189,25 @@ app.post('/api/auth/notebooklm', async (_req, res) => {
         res.json({ ok: true, message: 'Session saved successfully' })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// ── Telegram Webhook (handle button clicks) ───────────────────────
+import { handleTelegramWebhook } from './telegram-webhook'
+
+app.post('/api/telegram/webhook', async (req, res) => {
+    try {
+        const update = req.body
+        const botToken = process.env.TELEGRAM_BOT_TOKEN || '8299044370:AAGSx2Hkgf_VOTIfB9tNAlQ8W1RddFrStRw'
+        const clickResponseMessage = process.env.TELEGRAM_CLICK_RESPONSE || '你點擊了標籤：'
+
+        await handleTelegramWebhook(update, botToken, clickResponseMessage)
+
+        res.json({ ok: true })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.error('Telegram webhook error:', message)
         res.status(500).json({ ok: false, error: message })
     }
 })

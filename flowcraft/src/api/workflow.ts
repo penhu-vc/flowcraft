@@ -37,7 +37,10 @@ export interface ExecutionResponse {
 /**
  * 執行工作流
  */
-export async function runWorkflow(workflow: Workflow): Promise<ExecutionResponse> {
+export async function runWorkflow(
+  workflow: Workflow,
+  nodeCache?: Record<string, any>
+): Promise<ExecutionResponse> {
   const socket = socketManager.getSocket()
 
   if (!socket) {
@@ -51,7 +54,8 @@ export async function runWorkflow(workflow: Workflow): Promise<ExecutionResponse
     },
     body: JSON.stringify({
       workflow,
-      socketId: socket.id
+      socketId: socket.id,
+      nodeCache: nodeCache || {}
     })
   })
 

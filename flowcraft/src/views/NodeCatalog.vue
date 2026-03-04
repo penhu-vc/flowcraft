@@ -44,7 +44,17 @@
               </span>
             </div>
           </div>
-          <span style="font-size:10px;color:var(--text-muted);font-family:monospace;">v{{ node.version }}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button
+              class="btn-hide"
+              :class="{ hidden: isNodeHidden(node.id) }"
+              @click.stop="toggleNodeVisibility(node.id)"
+              :title="isNodeHidden(node.id) ? '顯示此節點' : '隱藏此節點'"
+            >
+              {{ isNodeHidden(node.id) ? '👁️' : '🙈' }}
+            </button>
+            <span style="font-size:10px;color:var(--text-muted);font-family:monospace;">v{{ node.version }}</span>
+          </div>
         </div>
         <div class="card-body">
           <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">{{ node.description }}</p>
@@ -98,6 +108,35 @@ const allCats = {
   ...CATEGORY_LABELS,
 }
 
+// 隱藏的節點管理
+const HIDDEN_NODES_KEY = 'flowcraft_hidden_nodes'
+
+function getHiddenNodes(): Set<string> {
+  const stored = localStorage.getItem(HIDDEN_NODES_KEY)
+  return stored ? new Set(JSON.parse(stored)) : new Set()
+}
+
+function saveHiddenNodes(hiddenNodes: Set<string>) {
+  localStorage.setItem(HIDDEN_NODES_KEY, JSON.stringify([...hiddenNodes]))
+}
+
+const hiddenNodes = ref<Set<string>>(getHiddenNodes())
+
+function isNodeHidden(nodeId: string): boolean {
+  return hiddenNodes.value.has(nodeId)
+}
+
+function toggleNodeVisibility(nodeId: string) {
+  if (hiddenNodes.value.has(nodeId)) {
+    hiddenNodes.value.delete(nodeId)
+  } else {
+    hiddenNodes.value.add(nodeId)
+  }
+  saveHiddenNodes(hiddenNodes.value)
+  // 觸發響應式更新
+  hiddenNodes.value = new Set(hiddenNodes.value)
+}
+
 function countByCategory(cat: string) {
   if (cat === 'all') return NODE_REGISTRY.length
   return NODE_REGISTRY.filter(n => n.category === cat).length
@@ -134,4 +173,24 @@ const filtered = computed(() => {
 .input-badge { font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600;flex-shrink:0; }
 .input-badge.required { background:rgba(239,68,68,0.15);color:var(--red); }
 .input-badge.optional { background:var(--bg-hover);color:var(--text-muted); }
+
+.btn-hide {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+  opacity: 0.5;
+}
+.btn-hide:hover {
+  opacity: 1;
+  border-color: var(--accent-purple);
+}
+.btn-hide.hidden {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--red);
+  opacity: 1;
+}
 </style>

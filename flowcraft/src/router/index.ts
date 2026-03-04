@@ -27,6 +27,10 @@ const router = createRouter({
       path: '/nodes',
       component: () => import('../views/NodeCatalog.vue'),
     },
+    {
+      path: '/collections',
+      component: () => import('../views/Collections.vue'),
+    },
   ],
 })
 

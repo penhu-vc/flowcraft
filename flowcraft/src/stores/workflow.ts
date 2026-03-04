@@ -24,8 +24,23 @@ function loadFromStorage(): WorkflowMeta[] {
     }
 }
 
+async function syncToBackend(workflows: WorkflowMeta[]) {
+    try {
+        await fetch('http://localhost:3001/api/workflows/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflows })
+        })
+        console.log('[Workflow] Synced to backend')
+    } catch (err) {
+        console.warn('[Workflow] Failed to sync to backend:', err)
+    }
+}
+
 function saveToStorage(workflows: WorkflowMeta[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows))
+    // 自動同步到後端
+    syncToBackend(workflows)
 }
 
 export const useWorkflowStore = defineStore('workflow', () => {

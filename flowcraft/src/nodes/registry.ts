@@ -197,14 +197,16 @@ export const NODE_REGISTRY: NodeDef[] = [
         name: 'Send Telegram',
         category: 'action',
         icon: '✈️',
-        description: '傳送訊息到 Telegram 頻道或群組（支援聊天連結自動提取 Chat ID）',
-        version: '2.1.0',
+        description: '傳送訊息或圖片到 Telegram 頻道或群組（支援互動標籤按鈕 + YouTube 連結）',
+        version: '2.4.0',
         customConfig: 'SendTelegramConfig',
         inputs: [
             { key: 'bot_token', label: 'Bot Token', type: 'password', required: true },
             { key: 'chatUrl', label: '聊天連結或 Chat ID', type: 'string', placeholder: 'https://t.me/c/1234567890/123 或 -1002264990839' },
             { key: 'chat_id', label: 'Chat ID (備用)', type: 'string', placeholder: '如果沒填上面的連結，就用這個' },
-            { key: 'message', label: '訊息內容', type: 'textarea', required: true, placeholder: '支援 {{變數}} 插值' },
+            { key: 'photo', label: '圖片 (選填)', type: 'string', placeholder: '圖片網址或本地路徑，填了就發圖片' },
+            { key: 'youtubeUrl', label: 'YouTube 連結 (選填)', type: 'string', placeholder: 'YouTube 影片網址，會加「打開影片」按鈕' },
+            { key: 'message', label: '訊息內容', type: 'textarea', required: true, placeholder: '支援 {{變數}} 插值，有圖片時為圖片說明' },
             { key: 'thread_id', label: 'Thread ID (選填)', type: 'string', placeholder: '回覆特定討論串' },
             {
                 key: 'parse_mode', label: '格式', type: 'select', default: 'Markdown', options: [
@@ -217,6 +219,8 @@ export const NODE_REGISTRY: NodeDef[] = [
         outputs: [
             { key: 'success', label: '成功', type: 'boolean' },
             { key: 'message_id', label: '訊息 ID', type: 'string' },
+            { key: 'tags', label: '標籤資料', type: 'array' },
+            { key: 'recordCollectionId', label: '記錄資料集 ID', type: 'string' },
         ],
     },
     {
@@ -446,6 +450,41 @@ export const NODE_REGISTRY: NodeDef[] = [
             { key: 'result', label: '結構化素材 (YAML)', type: 'string' },
         ],
     },
+    {
+        id: 'script-generator',
+        name: '劇本指令｜爆裂口播 v2',
+        category: 'ai',
+        icon: '🎬',
+        description: '🤖 接在礦機節點後，將結構化素材轉換成爆裂短句口播稿（支援參考資料）',
+        version: '1.0.0',
+        inputs: [
+            { key: 'source', label: '來源素材', type: 'textarea', required: true, placeholder: '貼上礦機輸出的 YAML 或其他來源素材' },
+            { key: 'reference', label: '參考資料（選填）', type: 'textarea', placeholder: '可選的參考資料，用於豐富劇本內容' },
+            {
+                key: 'aiProvider', label: 'AI 供應商', type: 'select', default: 'gemini', options: [
+                    { label: 'Gemini（已接好）', value: 'gemini' },
+                    { label: 'OpenAI（接口）', value: 'openai' },
+                    { label: 'Anthropic（接口）', value: 'anthropic' },
+                    { label: 'Custom（接口）', value: 'custom' },
+                ]
+            },
+            { key: 'aiApiKey', label: 'AI API Key（接口預留）', type: 'password', placeholder: 'Provider API key（非 Gemini 可先留空）' },
+            { key: 'aiBaseUrl', label: 'AI Base URL（接口預留）', type: 'string', placeholder: '例如：https://api.openai.com/v1' },
+            {
+                key: 'model', label: '模型名稱', type: 'select', default: 'gemini-2.0-flash', options: [
+                    { label: 'Gemini 2.0 Flash（推薦）', value: 'gemini-2.0-flash' },
+                    { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
+                    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
+                ]
+            },
+            { key: 'temperature', label: '創意度', type: 'number', default: 1.0, placeholder: '推薦 1.0（爆裂風格）' },
+        ],
+        outputs: [
+            { key: 'result', label: '劇本', type: 'string' },
+            { key: 'script', label: '劇本（同 result）', type: 'string' },
+            { key: 'keywords', label: '關鍵字候選', type: 'array' },
+        ],
+    },
 
     // ─── DATA ──────────────────────────────────────────────────
     {
@@ -523,6 +562,61 @@ export const NODE_REGISTRY: NodeDef[] = [
         outputs: [
             { key: 'file_path', label: '本地檔案路徑', type: 'string' },
             { key: 'duration', label: '影片秒數', type: 'number' },
+        ],
+    },
+    {
+        id: 'youtube-subtitle',
+        name: 'YouTube 字幕提取',
+        category: 'media',
+        icon: '💬',
+        description: 'YouTube 字幕提取器（純文字，含自動生成字幕）支援條件分支',
+        version: '1.2.0',
+        inputs: [
+            { key: 'url', label: 'YouTube 網址', type: 'string', required: true, placeholder: 'https://youtube.com/watch?v=...' },
+            { key: 'language', label: '語言代碼', type: 'string', default: 'auto', placeholder: 'auto (自動), en, zh-TW, zh-CN, ja...' },
+        ],
+        outputs: [
+            { key: 'success', label: '成功狀態', type: 'boolean' },
+            { key: 'transcript', label: '字幕文本', type: 'string' },
+            { key: 'method', label: '提取方法', type: 'string' },
+            { key: 'language', label: '語言', type: 'string' },
+            { key: 'url', label: '原始 URL', type: 'string' },
+            { key: 'onSuccess', label: '✅ 成功 → 字幕文本', type: 'string' },
+            { key: 'onFailure', label: '❌ 失敗 → 網址', type: 'string' },
+        ],
+    },
+    {
+        id: 'youtube-thumbnail',
+        name: 'YouTube 封面下載',
+        category: 'media',
+        icon: '📸',
+        description: 'YouTube 封面圖下載器（自動選擇最佳畫質）',
+        version: '1.1.0',
+        inputs: [
+            { key: 'input', label: 'YouTube URL 或縮圖地址', type: 'string', required: true, placeholder: 'https://youtube.com/watch?v=... 或縮圖 URL' },
+            { key: 'savePath', label: '儲存路徑', type: 'string', default: '/tmp/yt-thumbnails', placeholder: '預設 /tmp/yt-thumbnails' },
+        ],
+        outputs: [
+            { key: 'thumbnail', label: '封面圖 URL', type: 'string' },
+            { key: 'downloadPath', label: '下載路徑', type: 'string' },
+            { key: 'photo', label: '圖片（接 Telegram）', type: 'string' },
+            { key: 'videoId', label: '影片 ID', type: 'string' },
+        ],
+    },
+    {
+        id: 'youtube-recent-videos',
+        name: 'YouTube 最近影片',
+        category: 'trigger',
+        icon: '📹',
+        description: 'YouTube 頻道最近 5 支影片選擇器（RSS Feed）',
+        version: '1.1.0',
+        customConfig: 'YouTubeRecentVideosConfig',
+        inputs: [],
+        outputs: [
+            { key: 'url', label: '影片 URL', type: 'string' },
+            { key: 'videoId', label: '影片 ID', type: 'string' },
+            { key: 'title', label: '標題', type: 'string' },
+            { key: 'publishedAt', label: '發布日期', type: 'string' },
         ],
     },
 
@@ -608,6 +702,56 @@ export const NODE_REGISTRY: NodeDef[] = [
         ],
         outputs: [
             { key: 'text', label: '文字輸出', type: 'string' },
+        ],
+    },
+    {
+        id: 'bullet-point-reference',
+        name: '列點型參考',
+        category: 'data',
+        icon: '📋',
+        description: '整理和管理列點資料，支援自動解析、編輯、刪除和一鍵複製',
+        version: '1.0.0',
+        customConfig: 'BulletPointReferenceConfig',
+        inputs: [
+            { key: 'items', label: '列點資料（JSON）', type: 'textarea', placeholder: '由配置面板自動管理' },
+        ],
+        outputs: [
+            { key: 'result', label: '格式化列點', type: 'string' },
+            { key: 'items', label: '列點陣列', type: 'array' },
+        ],
+    },
+    {
+        id: 'write-collection',
+        name: '寫入資料集',
+        category: 'data',
+        icon: '💾',
+        description: '將節點輸出的資料寫入指定的資料集，支援跨工作流資料共享',
+        version: '1.0.0',
+        customConfig: 'WriteCollectionConfig',
+        inputs: [
+            { key: 'collectionId', label: '資料集 ID', type: 'string', required: true, placeholder: '選擇要寫入的資料集' },
+            { key: 'data', label: '要寫入的資料', type: 'textarea', required: true, placeholder: '連接上游節點或手動輸入 JSON' },
+        ],
+        outputs: [
+            { key: 'success', label: '寫入成功', type: 'boolean' },
+            { key: 'recordId', label: '記錄 ID', type: 'string' },
+        ],
+    },
+    {
+        id: 'execution-logger',
+        name: '執行記錄器',
+        category: 'data',
+        icon: '📝',
+        description: '自動收集上游節點的所有輸出欄位並寫入資料集，用於追蹤工作流執行歷程',
+        version: '2.0.0',
+        customConfig: 'ExecutionLoggerConfig',
+        inputs: [
+            { key: 'collectionId', label: '資料集 ID', type: 'string', required: true },
+            { key: 'data', label: '資料（自動收集所有欄位）', type: 'object', placeholder: '連接任意節點輸出，自動解析所有欄位' },
+        ],
+        outputs: [
+            { key: 'success', label: '寫入成功', type: 'boolean' },
+            { key: 'record', label: '記錄資料', type: 'object' },
         ],
     },
 ]
