@@ -1,28 +1,18 @@
 [
   {
-    "id": "wf-1772544781557",
-    "name": "456",
-    "description": "",
-    "active": false,
-    "createdAt": "2026-03-03T13:33:01.557Z",
-    "updatedAt": "2026-03-03T13:37:42.663Z",
-    "nodes": [],
-    "edges": []
-  },
-  {
-    "id": "wf-1772470073926",
+    "id": "wf-1772628208934",
     "name": "123",
     "description": "",
     "active": false,
-    "createdAt": "2026-03-02T16:47:53.926Z",
-    "updatedAt": "2026-03-04T12:48:07.975Z",
+    "createdAt": "2026-03-04T12:43:28.934Z",
+    "updatedAt": "2026-03-04T12:51:04.499Z",
     "nodes": [
       {
         "id": "youtube-monitor-1772542042015",
         "type": "custom",
         "dimensions": {
           "width": 220,
-          "height": 174
+          "height": 175
         },
         "computedPosition": {
           "x": -418.3661594202698,
@@ -105,7 +95,7 @@
             "hiddenPorts": "[]",
             "visiblePorts": ""
           },
-          "disabled": false
+          "disabled": true
         },
         "events": {},
         "dragHandle": ".node-header"
@@ -115,7 +105,7 @@
         "type": "custom",
         "dimensions": {
           "width": 300,
-          "height": 126
+          "height": 127
         },
         "computedPosition": {
           "x": 477.47090438476425,
@@ -208,8 +198,8 @@
         "id": "execution-logger-1772544088200",
         "type": "custom",
         "dimensions": {
-          "width": 297,
-          "height": 102
+          "width": 298,
+          "height": 103
         },
         "computedPosition": {
           "x": 73.0129083747571,
@@ -223,7 +213,7 @@
               "type": "source",
               "nodeId": "execution-logger-1772544088200",
               "position": "right",
-              "x": 291.625,
+              "x": 292.6171875,
               "y": 64.00000381469727,
               "width": 11,
               "height": 11
@@ -233,7 +223,7 @@
               "type": "source",
               "nodeId": "execution-logger-1772544088200",
               "position": "right",
-              "x": 291.625,
+              "x": 292.6171875,
               "y": 88.00000381469727,
               "width": 11,
               "height": 11
@@ -299,8 +289,8 @@
         "id": "youtube-subtitle-1772553732449",
         "type": "custom",
         "dimensions": {
-          "width": 280,
-          "height": 150
+          "width": 279,
+          "height": 151
         },
         "computedPosition": {
           "x": 82.0300854041794,
@@ -314,7 +304,7 @@
               "type": "source",
               "nodeId": "youtube-subtitle-1772553732449",
               "position": "right",
-              "x": 274.640625,
+              "x": 273.6328125,
               "y": 64,
               "width": 11,
               "height": 11
@@ -324,7 +314,7 @@
               "type": "source",
               "nodeId": "youtube-subtitle-1772553732449",
               "position": "right",
-              "x": 274.640625,
+              "x": 273.6328125,
               "y": 88,
               "width": 11,
               "height": 11
@@ -334,7 +324,7 @@
               "type": "source",
               "nodeId": "youtube-subtitle-1772553732449",
               "position": "right",
-              "x": 274.640625,
+              "x": 273.6328125,
               "y": 112,
               "width": 11,
               "height": 11
@@ -344,7 +334,7 @@
               "type": "source",
               "nodeId": "youtube-subtitle-1772553732449",
               "position": "right",
-              "x": 274.640625,
+              "x": 273.6328125,
               "y": 136,
               "width": 11,
               "height": 11
@@ -401,7 +391,7 @@
         "type": "custom",
         "dimensions": {
           "width": 300,
-          "height": 126
+          "height": 127
         },
         "computedPosition": {
           "x": 477.1863212080973,
@@ -487,7 +477,7 @@
         "type": "custom",
         "dimensions": {
           "width": 300,
-          "height": 150
+          "height": 151
         },
         "computedPosition": {
           "x": 855.4374886372533,
@@ -602,8 +592,8 @@
         "id": "line-breaker-1772554008007",
         "type": "custom",
         "dimensions": {
-          "width": 263,
-          "height": 126
+          "width": 264,
+          "height": 127
         },
         "computedPosition": {
           "x": 1201.7195884425887,
@@ -617,7 +607,7 @@
               "type": "source",
               "nodeId": "line-breaker-1772554008007",
               "position": "right",
-              "x": 257.859375,
+              "x": 258.859375,
               "y": 64,
               "width": 11,
               "height": 11
@@ -684,8 +674,8 @@
         "id": "send-telegram-1772554051757",
         "type": "custom",
         "dimensions": {
-          "width": 281,
-          "height": 198
+          "width": 282,
+          "height": 199
         },
         "computedPosition": {
           "x": 1505.0009963196906,
@@ -699,7 +689,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772554051757",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 64,
               "width": 11,
               "height": 11
@@ -709,7 +699,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772554051757",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 88,
               "width": 11,
               "height": 11
@@ -719,7 +709,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772554051757",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 112,
               "width": 11,
               "height": 11
@@ -729,7 +719,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772554051757",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 136,
               "width": 11,
               "height": 11
@@ -839,7 +829,7 @@
         "type": "custom",
         "dimensions": {
           "width": 300,
-          "height": 102
+          "height": 103
         },
         "computedPosition": {
           "x": 78.4229160179678,
@@ -910,8 +900,8 @@
         "id": "send-telegram-1772555069938",
         "type": "custom",
         "dimensions": {
-          "width": 281,
-          "height": 198
+          "width": 282,
+          "height": 199
         },
         "computedPosition": {
           "x": 488.45186206057633,
@@ -925,7 +915,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772555069938",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 64,
               "width": 11,
               "height": 11
@@ -935,7 +925,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772555069938",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 88,
               "width": 11,
               "height": 11
@@ -945,7 +935,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772555069938",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 112,
               "width": 11,
               "height": 11
@@ -955,7 +945,7 @@
               "type": "source",
               "nodeId": "send-telegram-1772555069938",
               "position": "right",
-              "x": 276.03125,
+              "x": 277.0234375,
               "y": 136,
               "width": 11,
               "height": 11
@@ -1059,8 +1049,8 @@
         "id": "bullet-point-reference-1772555146536",
         "type": "custom",
         "dimensions": {
-          "width": 272,
-          "height": 102
+          "width": 273,
+          "height": 103
         },
         "computedPosition": {
           "x": 491.6502282378915,
@@ -1074,7 +1064,7 @@
               "type": "source",
               "nodeId": "bullet-point-reference-1772555146536",
               "position": "right",
-              "x": 267.171875,
+              "x": 268.15625,
               "y": 64,
               "width": 11,
               "height": 11
@@ -1084,7 +1074,7 @@
               "type": "source",
               "nodeId": "bullet-point-reference-1772555146536",
               "position": "right",
-              "x": 267.171875,
+              "x": 268.15625,
               "y": 87.99998474121094,
               "width": 11,
               "height": 11
@@ -1129,12 +1119,12 @@
         "type": "custom",
         "dimensions": {
           "width": 220,
-          "height": 150
+          "height": 151
         },
         "computedPosition": {
           "x": -418.2379956973428,
           "y": 327.4244610646853,
-          "z": 0
+          "z": 1000
         },
         "handleBounds": {
           "source": [
@@ -1143,8 +1133,8 @@
               "type": "source",
               "nodeId": "youtube-recent-videos-1772556665407",
               "position": "right",
-              "x": 215,
-              "y": 64,
+              "x": 214.99959298399952,
+              "y": 64.00006438792173,
               "width": 11,
               "height": 11
             },
@@ -1153,8 +1143,8 @@
               "type": "source",
               "nodeId": "youtube-recent-videos-1772556665407",
               "position": "right",
-              "x": 215,
-              "y": 88,
+              "x": 214.99959298399952,
+              "y": 88.00012070470464,
               "width": 11,
               "height": 11
             },
@@ -1163,8 +1153,8 @@
               "type": "source",
               "nodeId": "youtube-recent-videos-1772556665407",
               "position": "right",
-              "x": 215,
-              "y": 112,
+              "x": 214.99959298399952,
+              "y": 111.99991965098947,
               "width": 11,
               "height": 11
             },
@@ -1173,15 +1163,15 @@
               "type": "source",
               "nodeId": "youtube-recent-videos-1772556665407",
               "position": "right",
-              "x": 215,
-              "y": 135.99996948242188,
+              "x": 214.99959298399952,
+              "y": 135.99997596777237,
               "width": 11,
               "height": 11
             }
           ],
           "target": null
         },
-        "selected": false,
+        "selected": true,
         "dragging": false,
         "resizing": false,
         "initialized": false,
@@ -1197,8 +1187,8 @@
           "category": "trigger",
           "config": {
             "channelUrl": "https://www.youtube.com/watch?v=WsrwbWBiWUQ",
-            "videos": "[{\"videoId\":\"WsrwbWBiWUQ\",\"title\":\"ALERT - Silver Price Is Falling Fast (DO THIS NOW)\",\"url\":\"https://www.youtube.com/watch?v=WsrwbWBiWUQ\",\"publishedAt\":\"2026-03-04T08:30:26+00:00\"},{\"videoId\":\"cs6X-Zu8cn4\",\"title\":\"PREPARE! This Is A ONCE IN A DECADE OPPORTUNITY! | Silver Price 2026\",\"url\":\"https://www.youtube.com/watch?v=cs6X-Zu8cn4\",\"publishedAt\":\"2026-03-04T06:11:56+00:00\"},{\"videoId\":\"EO1N4gx6kEc\",\"title\":\"$1 TRILLION Wiped Out in 80 Minutes: The Silver Bloodbath Explained\",\"url\":\"https://www.youtube.com/watch?v=EO1N4gx6kEc\",\"publishedAt\":\"2026-03-04T01:44:47+00:00\"},{\"videoId\":\"zjKmmG0-9t0\",\"title\":\"Silver Hit $100 Then CRASHED $8 the Same Minute — Someone Just Slammed Silver $8 in 60 Seconds\",\"url\":\"https://www.youtube.com/watch?v=zjKmmG0-9t0\",\"publishedAt\":\"2026-03-03T20:00:50+00:00\"},{\"videoId\":\"byvWq5LzMtY\",\"title\":\"Silver’s $100 Fakeout Was a Trap — The Gap That Changed Everything\",\"url\":\"https://www.youtube.com/watch?v=byvWq5LzMtY\",\"publishedAt\":\"2026-03-03T17:33:38+00:00\"}]",
-            "selectedVideoIndex": 0,
+            "videos": "[{\"videoId\":\"JTRHB1pdeF4\",\"title\":\"Silver Deficit Alert: Demand Is Burning Through Inventories\",\"url\":\"https://www.youtube.com/watch?v=JTRHB1pdeF4\",\"publishedAt\":\"2026-03-04T11:30:15+00:00\"},{\"videoId\":\"eSNEL0ZgYDE\",\"title\":\"Gold &amp; Silver Under Liquidity Stress – Holding Firm? Market Close\",\"url\":\"https://www.youtube.com/watch?v=eSNEL0ZgYDE\",\"publishedAt\":\"2026-03-04T10:01:02+00:00\"},{\"videoId\":\"WsrwbWBiWUQ\",\"title\":\"ALERT - Silver Price Is Falling Fast (DO THIS NOW)\",\"url\":\"https://www.youtube.com/watch?v=WsrwbWBiWUQ\",\"publishedAt\":\"2026-03-04T08:30:26+00:00\"},{\"videoId\":\"cs6X-Zu8cn4\",\"title\":\"PREPARE! This Is A ONCE IN A DECADE OPPORTUNITY! | Silver Price 2026\",\"url\":\"https://www.youtube.com/watch?v=cs6X-Zu8cn4\",\"publishedAt\":\"2026-03-04T06:11:56+00:00\"},{\"videoId\":\"EO1N4gx6kEc\",\"title\":\"$1 TRILLION Wiped Out in 80 Minutes: The Silver Bloodbath Explained\",\"url\":\"https://www.youtube.com/watch?v=EO1N4gx6kEc\",\"publishedAt\":\"2026-03-04T01:44:47+00:00\"}]",
+            "selectedVideoIndex": 2,
             "hiddenPorts": "[]",
             "visiblePorts": ""
           }
