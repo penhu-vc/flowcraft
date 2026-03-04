@@ -34,11 +34,12 @@ function getLastProcessedVideoId(): string | null {
 }
 
 // 儲存已處理的影片 ID
-function saveLastProcessedVideoId(videoId: string): void {
+function saveLastProcessedVideoId(videoId: string, emit: EmitFn): void {
     try {
         writeFileSync(STATE_FILE, JSON.stringify({ lastVideoId: videoId, updatedAt: new Date().toISOString() }))
+        emit('node:log', { message: `💾 已儲存 state: ${videoId}` })
     } catch (error) {
-        // ignore
+        emit('node:log', { message: `⚠️ 儲存 state 失敗: ${error}` })
     }
 }
 
@@ -175,8 +176,8 @@ export async function executeYouTubeMonitor(
     }
 
     // 儲存新影片 ID
-    saveLastProcessedVideoId(video.videoId)
     emit('node:log', { message: `✨ 發現新影片！ID: ${video.videoId}` })
+    saveLastProcessedVideoId(video.videoId, emit)
 
     // 獲取縮圖 URL
     const thumbnailUrl = `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`
