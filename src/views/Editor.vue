@@ -570,6 +570,14 @@ function onNodeClick({ node }: { node: Node }) {
   const defaults: Record<string, any> = {}
   def?.inputs?.forEach(f => { defaults[f.key] = node.data.config?.[f.key] ?? f.default ?? '' })
   nodeData.value = { ...defaults, ...node.data.config }
+
+  // 🆕 自動檢查快取：如果勾選了「使用快取」但沒有快取數據，自動取消勾選
+  if (nodeData.value.useCachedResult && !nodeCacheStore.hasCache(node.id)) {
+    console.log(`[Cache] 節點 ${node.id} 沒有快取，自動取消「使用快取結果」`)
+    nodeData.value.useCachedResult = false
+    // 同步更新到節點配置
+    setTimeout(() => updateNodeConfig(), 0)
+  }
 }
 
 function onEdgeClick({ edge }: { edge: Edge }) {
