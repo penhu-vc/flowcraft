@@ -28,11 +28,14 @@ export interface NodeExecution {
   duration?: number
 }
 
+export type TriggerMode = 'fallback' | 'sequential'
+
 export interface Workflow {
   id: string
   name: string
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  triggerMode?: TriggerMode  // 觸發器運行模式（預設 'fallback'）
 }
 
 export interface WorkflowNode {

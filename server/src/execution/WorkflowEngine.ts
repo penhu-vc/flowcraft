@@ -57,10 +57,29 @@ export class WorkflowEngine {
         throw new Error('工作流沒有起始節點')
       }
 
-      // 並行執行所有起始節點
-      await Promise.all(
-        startNodes.map(node => this.executeNode(node))
-      )
+      // 區分觸發器和一般起始節點
+      const triggers = this.sortTriggers(startNodes)
+      const nonTriggers = startNodes.filter(node => !this.isTriggerNode(node))
+
+      // 如果有觸發器，根據模式執行
+      if (triggers.length > 0) {
+        const triggerMode = this.workflow.triggerMode || 'fallback'
+
+        if (triggerMode === 'fallback') {
+          // 模式 A：運行失敗時更換
+          await this.runTriggersInFallbackMode(triggers)
+        } else {
+          // 模式 B：按順序觸發
+          await this.runTriggersInSequentialMode(triggers)
+        }
+      }
+
+      // 執行非觸發器的起始節點
+      if (nonTriggers.length > 0) {
+        await Promise.all(
+          nonTriggers.map(node => this.executeNode(node))
+        )
+      }
 
       // 標記執行完成
       this.execution.status = 'completed'
@@ -468,6 +487,129 @@ export class WorkflowEngine {
       'notebook_url'
     ]
     return indexFields.includes(key)
+  }
+
+  // ── 觸發器輪詢機制 ──────────────────────────────────────────────
+
+  /**
+   * 判斷節點是否為觸發器
+   */
+  private isTriggerNode(node: WorkflowNode): boolean {
+    // 觸發器通常有 category: 'trigger' 或特定的 type
+    const triggerTypes = ['manual-trigger', 'youtube-monitor', 'youtube-recent-videos']
+    return node.data.category === 'trigger' || triggerTypes.includes(node.type)
+  }
+
+  /**
+   * 根據 triggerOrder 排序觸發器
+   */
+  private sortTriggers(triggers: WorkflowNode[]): WorkflowNode[] {
+    return triggers.sort((a, b) => {
+      const orderA = a.data.triggerOrder || 999
+      const orderB = b.data.triggerOrder || 999
+      return orderA - orderB
+    })
+  }
+
+  /**
+   * 判斷觸發器結果是否有內容
+   */
+  private hasTriggerContent(result: any): boolean {
+    if (result === null || result === undefined) return false
+    if (result === '') return false
+    if (Array.isArray(result) && result.length === 0) return false
+    if (typeof result === 'object' && Object.keys(result).length === 0) return false
+    return true
+  }
+
+  /**
+   * 模式 A：運行失敗時更換（Fallback）
+   * 依序嘗試觸發器，第一個有內容就停止
+   */
+  private async runTriggersInFallbackMode(triggers: WorkflowNode[]): Promise<void> {
+    this.emit('node:log', {
+      executionId: this.executionId,
+      message: `🔄 觸發器模式：Fallback（共 ${triggers.length} 個觸發器）`
+    })
+
+    for (let i = 0; i < triggers.length; i++) {
+      const trigger = triggers[i]
+
+      this.emit('node:log', {
+        executionId: this.executionId,
+        message: `🎯 嘗試觸發器 ${i + 1}/${triggers.length}：${trigger.data.label || trigger.type}`
+      })
+
+      try {
+        // 執行觸發器
+        await this.executeNode(trigger)
+
+        // 檢查輸出
+        const result = this.nodeOutputs.get(trigger.id)
+
+        if (this.hasTriggerContent(result)) {
+          // 有內容，停止嘗試其他觸發器
+          this.emit('node:log', {
+            executionId: this.executionId,
+            message: `✅ 觸發器 ${i + 1} 成功，停止嘗試其他觸發器`
+          })
+          return
+        } else {
+          // 暫無內容，嘗試下一個
+          this.emit('node:log', {
+            executionId: this.executionId,
+            message: `⏭️ 觸發器 ${i + 1} 暫無內容，嘗試下一個`
+          })
+        }
+      } catch (error) {
+        // 執行失敗，嘗試下一個
+        this.emit('node:log', {
+          executionId: this.executionId,
+          message: `⚠️ 觸發器 ${i + 1} 執行失敗：${error}，嘗試下一個`
+        })
+      }
+    }
+
+    // 所有觸發器都沒有內容
+    this.emit('node:log', {
+      executionId: this.executionId,
+      message: `⏸️ 所有觸發器都暫無內容，停止工作流`
+    })
+  }
+
+  /**
+   * 模式 B：按順序觸發（Sequential）
+   * 依序執行所有觸發器，每個都執行完整工作流
+   */
+  private async runTriggersInSequentialMode(triggers: WorkflowNode[]): Promise<void> {
+    this.emit('node:log', {
+      executionId: this.executionId,
+      message: `🔄 觸發器模式：Sequential（共 ${triggers.length} 個觸發器）`
+    })
+
+    for (let i = 0; i < triggers.length; i++) {
+      const trigger = triggers[i]
+
+      this.emit('node:log', {
+        executionId: this.executionId,
+        message: `🎯 執行觸發器 ${i + 1}/${triggers.length}：${trigger.data.label || trigger.type}`
+      })
+
+      try {
+        // 執行觸發器（會自動觸發下游節點）
+        await this.executeNode(trigger)
+
+        this.emit('node:log', {
+          executionId: this.executionId,
+          message: `✅ 觸發器 ${i + 1} 執行完成`
+        })
+      } catch (error) {
+        this.emit('node:log', {
+          executionId: this.executionId,
+          message: `⚠️ 觸發器 ${i + 1} 執行失敗：${error}`
+        })
+      }
+    }
   }
 
   // ── 輔助函數 ──────────────────────────────────────────────────

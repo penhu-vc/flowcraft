@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
 
+export type TriggerMode = 'fallback' | 'sequential'
+
 export interface WorkflowMeta {
     id: string
     name: string
@@ -11,6 +13,7 @@ export interface WorkflowMeta {
     updatedAt: string
     nodes: Node[]
     edges: Edge[]
+    triggerMode?: TriggerMode  // 觸發器運行模式
 }
 
 const STORAGE_KEY = 'flowcraft_workflows'
