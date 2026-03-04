@@ -11,11 +11,18 @@ import { Workflow } from './execution/types'
 
 const app = express()
 const httpServer = createServer(app)
+
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175'
+]
+
 const io = new SocketIO(httpServer, {
-    cors: { origin: 'http://localhost:5173', methods: ['GET', 'POST'] }
+    cors: { origin: allowedOrigins, methods: ['GET', 'POST'] }
 })
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({ origin: allowedOrigins }))
 app.use(express.json())
 
 // ── Health check ──────────────────────────────────────────────────
