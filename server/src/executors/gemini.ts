@@ -4,7 +4,8 @@
  */
 
 import { VertexAI } from '@google-cloud/vertexai'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
+import { join } from 'path'
 
 type EmitFn = (event: string, data: unknown) => void
 
@@ -16,11 +17,21 @@ export interface GeminiConfig {
     maxTokens?: number      // Default: 8192
 }
 
-// 讀取 GCP profile 設定
-function loadGCPProfile() {
-    const profiles = JSON.parse(readFileSync('/Users/yaja/projects/gcp-profiles.json', 'utf8'))
-    const current = profiles.profiles[profiles.currentProfile]
-    return current
+// 讀取 GCP 憑證
+function loadGCPCredentials(): { projectId: string; location: string } {
+    // 優先使用環境變數指定的憑證檔案
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+        || join(__dirname, '../../data/gcp-credentials.json')
+
+    if (!existsSync(credentialsPath)) {
+        throw new Error('GCP 憑證未設定！請到「設定」頁面匯入 GCP 憑證 JSON 檔案。')
+    }
+
+    const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8'))
+    return {
+        projectId: credentials.project_id,
+        location: 'us-central1'  // 預設區域
+    }
 }
 
 export async function executeGemini(
@@ -39,36 +50,8 @@ export async function executeGemini(
 
     emit('node:log', { message: '初始化 Gemini API...' })
 
-    // 設定環境變數
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/Users/yaja/projects/gcp-current.json'
-
-    // 讀取 project ID
-    const profile = loadGCPProfile()
-    const projectId = profile.serviceAccount.projectId
-
-    // Gemini 模型區域選擇
-    let location: string
-
-    // 模型 → 支援區域對照表
-    const modelRegions: Record<string, string[]> = {
-        'gemini-2.0': ['us-central1'],
-        'gemini-1.5': ['us-central1', 'us-east1', 'us-west1', 'europe-west1'],
-        'gemini-pro': ['us-central1'],
-        'gemini-flash': ['us-central1']
-    }
-
-    // 判斷模型類型並選擇區域
-    if (model.includes('gemini-2.0')) {
-        location = 'us-central1'  // Gemini 2.0 僅支援 us-central1
-    } else if (model.includes('gemini-1.5')) {
-        // Gemini 1.5 支援多個區域，但優先使用 us-central1
-        const profileLocation = profile.vertexAI?.location || 'us-central1'
-        const supportedRegions = modelRegions['gemini-1.5']
-        location = supportedRegions.includes(profileLocation) ? profileLocation : 'us-central1'
-    } else {
-        // 其他模型預設使用 us-central1
-        location = 'us-central1'
-    }
+    // 讀取 GCP 憑證
+    const { projectId, location } = loadGCPCredentials()
 
     emit('node:log', { message: `使用模型: ${model}` })
     emit('node:log', { message: `區域: ${location}` })
@@ -146,7 +129,7 @@ export async function executeGemini(
         if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
             emit('node:log', { message: '⚠️ API 配額耗盡，建議解決方案：' })
             emit('node:log', { message: '• 等待 1-2 分鐘後再執行' })
-            emit('node:log', { message: '• 或切換到另一個 GCP 帳號（yaja/penhu）' })
+            emit('node:log', { message: '• 或到「設定」頁面切換到另一個 GCP 帳號' })
             emit('node:log', { message: '• 或到 GCP Console 申請提高配額' })
         }
 
