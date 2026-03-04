@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
+import { API_ENDPOINTS } from '../api/config'
 
 export type TriggerMode = 'fallback' | 'sequential'
 
@@ -29,7 +30,7 @@ function loadFromStorage(): WorkflowMeta[] {
 
 async function syncToBackend(workflows: WorkflowMeta[]) {
     try {
-        await fetch('http://localhost:3001/api/workflows/sync', {
+        await fetch(API_ENDPOINTS.workflowsSync, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ workflows })

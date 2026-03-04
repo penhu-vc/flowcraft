@@ -1,9 +1,9 @@
 /**
  * FlowCraft Backend API
- * Calls the backend server (localhost:3001) to execute nodes.
+ * Calls the backend server to execute nodes.
  */
 
-const BACKEND_URL = 'http://localhost:3001'
+import { API_BASE_URL, API_ENDPOINTS } from './config'
 
 export interface ExecuteResult {
     ok: boolean
@@ -18,7 +18,7 @@ export async function executeNode(
     socketId?: string
 ): Promise<ExecuteResult> {
     try {
-        const res = await fetch(`${BACKEND_URL}/api/execute`, {
+        const res = await fetch(API_ENDPOINTS.execute, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nodeType, config, socketId }),
@@ -32,7 +32,7 @@ export async function executeNode(
 /** Check if backend is reachable */
 export async function checkBackendHealth(): Promise<boolean> {
     try {
-        const res = await fetch(`${BACKEND_URL}/api/health`)
+        const res = await fetch(API_ENDPOINTS.health)
         const data = await res.json()
         return data.status === 'ok'
     } catch {
@@ -43,7 +43,7 @@ export async function checkBackendHealth(): Promise<boolean> {
 /** Trigger first-time NotebookLM Google auth */
 export async function triggerNotebookLMAuth(): Promise<ExecuteResult> {
     try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/notebooklm`, { method: 'POST' })
+        const res = await fetch(API_ENDPOINTS.authNotebooklm, { method: 'POST' })
         return await res.json()
     } catch (err) {
         return { ok: false, error: String(err) }

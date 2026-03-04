@@ -83,6 +83,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { API_ENDPOINTS } from '../api/config'
 
 interface Video {
   videoId: string
@@ -140,7 +141,7 @@ async function fetchVideos() {
   loading.value = true
 
   try {
-    const response = await fetch(`http://localhost:3001/api/youtube/recent-videos?url=${encodeURIComponent(url)}`)
+    const response = await fetch(`${API_ENDPOINTS.youtubeRecentVideos}?url=${encodeURIComponent(url)}`)
     const data = await response.json()
 
     if (!data.ok) {

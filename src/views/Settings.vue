@@ -150,6 +150,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { API_ENDPOINTS } from '../api/config'
 
 const geminiMode = ref<'apiKey' | 'gcp'>('apiKey')
 const geminiApiKey = ref('')
@@ -182,7 +183,7 @@ function showMessage(msg: string, type: 'success' | 'error' = 'success') {
 
 async function checkGeminiStatus() {
   try {
-    const res = await fetch('http://localhost:3001/api/settings/gemini/status')
+    const res = await fetch(API_ENDPOINTS.settingsGeminiStatus)
     const data = await res.json()
 
     if (data.ok) {
@@ -227,7 +228,7 @@ async function saveGeminiApiKey() {
   }
 
   try {
-    const res = await fetch('http://localhost:3001/api/settings/gemini/api-key', {
+    const res = await fetch(API_ENDPOINTS.settingsGeminiApiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: geminiApiKey.value })
@@ -278,7 +279,7 @@ async function onImportCredentials(e: Event) {
       return
     }
 
-    const res = await fetch('http://localhost:3001/api/settings/gcp/credentials', {
+    const res = await fetch(API_ENDPOINTS.settingsGcpCredentials, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credentials: json })
@@ -303,7 +304,7 @@ async function removeCredentials() {
   if (!confirm('確定要移除 GCP 憑證嗎？')) return
 
   try {
-    const res = await fetch('http://localhost:3001/api/settings/gcp/credentials', {
+    const res = await fetch(API_ENDPOINTS.settingsGcpCredentials, {
       method: 'DELETE'
     })
     const data = await res.json()
@@ -323,7 +324,7 @@ async function removeCredentials() {
 
 async function saveApiKeys() {
   try {
-    const res = await fetch('http://localhost:3001/api/settings/api-keys', {
+    const res = await fetch(API_ENDPOINTS.settingsApiKeys, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(apiKeys.value)
@@ -342,7 +343,7 @@ async function saveApiKeys() {
 
 async function loadApiKeys() {
   try {
-    const res = await fetch('http://localhost:3001/api/settings/api-keys')
+    const res = await fetch(API_ENDPOINTS.settingsApiKeys)
     const data = await res.json()
     if (data.ok) {
       apiKeys.value = {

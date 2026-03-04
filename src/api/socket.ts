@@ -4,6 +4,7 @@
  */
 
 import { io, Socket } from 'socket.io-client'
+import { WEBSOCKET_URL } from './config'
 
 class SocketManager {
   private static instance: SocketManager
@@ -18,7 +19,7 @@ class SocketManager {
     return SocketManager.instance
   }
 
-  connect(url: string = 'http://localhost:3001'): Socket {
+  connect(url: string = WEBSOCKET_URL): Socket {
     if (this.socket?.connected) {
       return this.socket
     }

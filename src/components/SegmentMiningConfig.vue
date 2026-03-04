@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { API_ENDPOINTS } from '../api/config'
 
 const props = defineProps<{
   config: Record<string, any>
@@ -120,7 +121,7 @@ async function copyPrompts() {
   copyButtonText.value = '載入中...'
 
   try {
-    const response = await fetch('http://localhost:3001/api/prompts/segment-mining')
+    const response = await fetch(API_ENDPOINTS.promptsSegmentMining)
     const data = await response.json()
 
     if (data.ok) {

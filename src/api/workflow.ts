@@ -3,8 +3,7 @@
  */
 
 import { socketManager } from './socket'
-
-const API_BASE = 'http://localhost:3001/api'
+import { API_ENDPOINTS } from './config'
 
 export interface WorkflowNode {
   id: string
@@ -47,7 +46,7 @@ export async function runWorkflow(
     throw new Error('WebSocket not connected')
   }
 
-  const response = await fetch(`${API_BASE}/workflow/run`, {
+  const response = await fetch(API_ENDPOINTS.workflowRun, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -76,7 +75,7 @@ export async function executeNode(
 ): Promise<any> {
   const socket = socketManager.getSocket()
 
-  const response = await fetch(`${API_BASE}/execute`, {
+  const response = await fetch(API_ENDPOINTS.execute, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
