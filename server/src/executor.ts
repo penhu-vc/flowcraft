@@ -30,6 +30,19 @@ export async function executeNode(
                 data: payload
             }
 
+        case 'article-trigger':
+            // Article Trigger: 返回文章內容
+            emit('node:log', { message: '📄 文章觸發器' })
+            const articleContent = config.article as string || ''
+            const wordCount = articleContent.length
+            emit('node:log', { message: `文章字數: ${wordCount} 字元` })
+            emit('node:log', { message: `預覽: ${articleContent.substring(0, 100)}${articleContent.length > 100 ? '...' : ''}` })
+            return {
+                text: articleContent,
+                length: wordCount,
+                timestamp: new Date().toISOString()
+            }
+
         case 'text-constant':
             // Text Constant: 返回固定文字
             emit('node:log', { message: '📝 純文字節點' })

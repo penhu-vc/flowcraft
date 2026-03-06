@@ -41,6 +41,20 @@ async function syncToBackend(workflows: WorkflowMeta[]) {
     }
 }
 
+async function loadFromBackend(): Promise<WorkflowMeta[]> {
+    try {
+        const response = await fetch(`${API_ENDPOINTS.workflowsSync.replace('/sync', '')}`)
+        const data = await response.json()
+        if (data.ok && Array.isArray(data.workflows)) {
+            console.log('[Workflow] Loaded from backend:', data.workflows.length)
+            return data.workflows
+        }
+    } catch (err) {
+        console.warn('[Workflow] Failed to load from backend:', err)
+    }
+    return []
+}
+
 function saveToStorage(workflows: WorkflowMeta[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows))
     // 自動同步到後端
@@ -122,6 +136,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
         }
     }
 
+    async function syncFromBackend() {
+        const backendWorkflows = await loadFromBackend()
+        if (backendWorkflows.length > 0) {
+            workflows.value = backendWorkflows
+            saveToStorage(workflows.value)
+            console.log('[Workflow] Synced from backend')
+        }
+    }
+
     return {
         workflows,
         currentWorkflow,
@@ -133,5 +156,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
         getWorkflow,
         exportWorkflow,
         importWorkflow,
+        syncFromBackend,
     }
 })

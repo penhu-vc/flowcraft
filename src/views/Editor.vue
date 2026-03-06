@@ -25,6 +25,8 @@
       <span class="badge badge-active" v-if="wf?.active">● 執行中</span>
     </div>
     <div class="topbar-actions">
+      <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignCenter" title="垂直置中對齊">⫼ 置中</button>
+      <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignHorizontal" title="水平對齊">⫻ 水平</button>
       <button class="btn btn-secondary btn-sm" @click="onSave">💾 儲存</button>
       <button class="btn btn-secondary btn-sm" @click="store.exportWorkflow(wfId)">⬇️ 匯出</button>
       <button
@@ -127,6 +129,8 @@
         edges-deletable
         nodes-deletable
         :delete-key-code="['Delete', 'Backspace']"
+        :selection-key-code="'Shift'"
+        :multi-selection-key-code="'Shift'"
         :min-zoom="0.2"
         :max-zoom="2"
         fit-view-on-init
@@ -230,11 +234,17 @@
                   {{ field.label }} <span v-if="field.required" style="color:var(--red);">*</span>
                 </label>
                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;" v-if="field.description">{{ field.description }}</div>
-                <textarea v-if="field.type === 'textarea'" class="form-textarea" v-model="nodeData[field.key]" :placeholder="field.placeholder" />
-                <select v-else-if="field.type === 'select'" class="form-select" v-model="nodeData[field.key]">
+                <textarea v-if="field.type === 'textarea'" class="form-textarea" v-model="nodeData[field.key]" :placeholder="field.placeholder" @blur="updateNodeConfig" />
+                <select v-else-if="field.type === 'select'" class="form-select" v-model="nodeData[field.key]" @change="updateNodeConfig">
                   <option v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                 </select>
-                <input v-else class="form-input" :type="field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'" v-model="nodeData[field.key]" :placeholder="field.placeholder" />
+                <input v-else class="form-input" :type="field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'" v-model="nodeData[field.key]" :placeholder="field.placeholder" @blur="updateNodeConfig" />
+              </div>
+              <!-- 一鍵複製指令（script-generator 專用） -->
+              <div v-if="selectedDef?.id === 'script-generator'" style="margin-bottom:14px;">
+                <button class="btn btn-secondary btn-sm" style="width:100%;" @click="copyScriptGeneratorPrompt">
+                  {{ copyPromptLabel }}
+                </button>
               </div>
               <div class="divider" />
               <!-- Port visibility for generic nodes -->
@@ -344,6 +354,7 @@ import BulletPointReferenceConfig from '../components/BulletPointReferenceConfig
 import WriteCollectionConfig from '../components/WriteCollectionConfig.vue'
 import ExecutionLoggerConfig from '../components/ExecutionLoggerConfig.vue'
 import PortVisibilityEditor from '../components/PortVisibilityEditor.vue'
+import { API_ENDPOINTS } from '../api/config'
 import { useWorkflowExecution } from '../composables/useWorkflowExecution'
 import { useHistory } from '../composables/useHistory'
 import { useExecutionStore } from '../stores/execution'
@@ -499,13 +510,18 @@ const styledEdges = computed(() => {
     const isConnectedToSelected = selectedNodeId.value &&
       (edge.source === selectedNodeId.value || edge.target === selectedNodeId.value)
 
+    // Check if edge connects two multi-selected nodes
+    const multiSelectedIds = new Set(selectedNodes.value.map(n => n.id))
+    const isMultiSelectedEdge = multiSelectedIds.size >= 2 &&
+      multiSelectedIds.has(edge.source) && multiSelectedIds.has(edge.target)
+
     // Check if connected to executing node
     const runningNodeId = executionStore.runningNodeId
     const isConnectedToExecuting = runningNodeId &&
       (edge.source === runningNodeId || edge.target === runningNodeId)
     const isDownstreamOfExecuting = runningNodeId && edge.source === runningNodeId
 
-    // Determine edge class (priority: executing > disabled > edge selection > node selection)
+    // Determine edge class (priority: executing > disabled > edge selection > multi-select > node selection)
     let edgeClass = ''
     let animated = false
 
@@ -524,6 +540,10 @@ const styledEdges = computed(() => {
       // When an edge is selected
       edgeClass = isSelectedEdge ? 'edge-highlighted' : 'edge-dimmed'
       animated = isSelectedEdge
+    } else if (multiSelectedIds.size >= 2) {
+      // When multiple nodes are selected, highlight edges between them
+      edgeClass = isMultiSelectedEdge ? 'edge-highlighted' : 'edge-dimmed'
+      animated = isMultiSelectedEdge
     } else if (selectedNodeId.value) {
       // When a node is selected
       edgeClass = isConnectedToSelected ? 'edge-highlighted' : 'edge-dimmed'
@@ -578,7 +598,55 @@ function onDragStart(e: DragEvent, nodeId: string) {
 }
 
 const canvasRef = ref<HTMLElement>()
-const { project, updateNode } = useVueFlow()
+const { project, updateNode, getSelectedNodes } = useVueFlow()
+
+// 多選節點（VueFlow 內建 Shift 多選）
+const selectedNodes = computed(() => getSelectedNodes.value)
+const hasMultiSelection = computed(() => selectedNodes.value.length >= 2)
+
+// 置中對齊（以第一個選擇的節點為基準，X 軸對齊）
+function alignCenter() {
+  const selected = selectedNodes.value
+  if (selected.length < 2) return
+  const anchor = selected[0]
+  const anchorCenterX = anchor.position.x + ((anchor.dimensions?.width || 220) / 2)
+  for (let i = 1; i < selected.length; i++) {
+    const node = selected[i]
+    const nodeWidth = node.dimensions?.width || 220
+    node.position = { ...node.position, x: anchorCenterX - (nodeWidth / 2) }
+  }
+  recordHistory()
+}
+
+// 水平對齊（以第一個選擇的節點為基準，Y 軸對齊）
+function alignHorizontal() {
+  const selected = selectedNodes.value
+  if (selected.length < 2) return
+  const anchor = selected[0]
+  const anchorY = anchor.position.y
+  for (let i = 1; i < selected.length; i++) {
+    selected[i].position = { ...selected[i].position, y: anchorY }
+  }
+  recordHistory()
+}
+
+// 一鍵複製指令（script-generator）
+const copyPromptLabel = ref('📋 一鍵複製指令')
+async function copyScriptGeneratorPrompt() {
+  try {
+    copyPromptLabel.value = '⏳ 載入中...'
+    const res = await fetch(API_ENDPOINTS.promptsScriptGenerator)
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.error)
+    await navigator.clipboard.writeText(data.combined)
+    copyPromptLabel.value = '✅ 已複製！'
+    setTimeout(() => { copyPromptLabel.value = '📋 一鍵複製指令' }, 2000)
+  } catch (err) {
+    copyPromptLabel.value = '❌ 複製失敗'
+    setTimeout(() => { copyPromptLabel.value = '📋 一鍵複製指令' }, 2000)
+  }
+}
+
 function onDrop(e: DragEvent) {
   if (!draggedNodeType.value) return
   const bounds = canvasRef.value!.getBoundingClientRect()
@@ -745,7 +813,7 @@ function onNodesChange(changes: any[]) {
   if (hasRemoval) recordHistory()  // 記錄歷史（節點刪除）
 }
 
-function onNodeClick({ node }: { node: Node }) {
+function onNodeClick({ node, event }: { node: Node; event: MouseEvent }) {
   selectedNodeId.value = node.id
   selectedEdgeId.value = null  // Clear edge selection when selecting node
   const def = getNodeDef(node.data.nodeType)
@@ -777,6 +845,11 @@ function onCustomConfigUpdate(newConfig: Record<string, any>) {
   nodeData.value = newConfig
   const node = nodes.value.find(n => n.id === selectedNodeId.value)
   if (node) node.data = { ...node.data, config: { ...newConfig } }
+
+  // Auto-save after custom config update
+  setTimeout(() => {
+    store.saveWorkflow(wfId, nodes.value, edges.value)
+  }, 100)
 }
 
 // Compute hiddenPorts from generic nodeData for PortVisibilityEditor

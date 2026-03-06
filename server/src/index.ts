@@ -15,7 +15,8 @@ const httpServer = createServer(app)
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
-    'http://localhost:5175'
+    'http://localhost:5175',
+    'http://flowcraft.localhost'  // Docker Gateway domain
 ]
 
 const io = new SocketIO(httpServer, {
@@ -104,6 +105,24 @@ app.get('/api/prompts/segment-mining', (_req, res) => {
         const promptsDir = join(__dirname, 'executors', 'prompts')
         const systemPrompt = readFileSync(join(promptsDir, 'segment-mining-system.md'), 'utf-8')
         const template = readFileSync(join(promptsDir, 'segment-mining-template.md'), 'utf-8')
+
+        res.json({
+            ok: true,
+            systemPrompt,
+            template,
+            combined: `${systemPrompt}\n\n${'='.repeat(80)}\n\n${template}`
+        })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/prompts/script-generator', (_req, res) => {
+    try {
+        const promptsDir = join(__dirname, 'executors', 'prompts')
+        const systemPrompt = readFileSync(join(promptsDir, 'script-generator-system.md'), 'utf-8')
+        const template = readFileSync(join(promptsDir, 'script-generator-template.md'), 'utf-8')
 
         res.json({
             ok: true,

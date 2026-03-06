@@ -1,0 +1,31 @@
+# FlowCraft Backend - Express + Socket.io + TypeScript
+# 支援 hot reload 開發模式（ts-node-dev）
+
+FROM node:20-alpine
+
+# 安裝 Chromium（Patchright 需要）
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# 設定 Chromium 路徑（讓 Patchright 使用系統 Chromium）
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+WORKDIR /app
+
+# 安裝依賴
+COPY package*.json ./
+RUN npm install
+
+# 其他檔案透過 volume mount 掛載
+# 支援 ts-node-dev hot reload
+
+EXPOSE 3001
+
+# 開發模式：ts-node-dev（支援 hot reload）
+CMD ["npm", "run", "dev"]

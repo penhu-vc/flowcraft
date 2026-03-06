@@ -190,6 +190,23 @@ export const NODE_REGISTRY: NodeDef[] = [
             { key: 'data', label: '自訂資料', type: 'object' },
         ],
     },
+    {
+        id: 'article-trigger',
+        name: '文章觸發器',
+        category: 'trigger',
+        icon: '📄',
+        description: '手動貼上文章內容，輸出純文字給下游節點處理',
+        version: '1.0.0',
+        triggerType: 'manual',
+        inputs: [
+            { key: 'article', label: '文章內容', type: 'textarea', required: true, placeholder: '在此貼上文章全文內容...' },
+        ],
+        outputs: [
+            { key: 'text', label: '文字內容', type: 'string' },
+            { key: 'length', label: '字數', type: 'number' },
+            { key: 'timestamp', label: '觸發時間', type: 'string' },
+        ],
+    },
 
     // ─── ACTIONS ──────────────────────────────────────────────
     {

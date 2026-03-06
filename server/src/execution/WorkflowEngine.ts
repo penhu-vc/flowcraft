@@ -167,10 +167,19 @@ export class WorkflowEngine {
       return
     }
 
-    // 🚫 檢查節點是否被停用
-    if (node.data.disabled === true) {
-      // 停用的節點：跳過執行，但傳遞上游資料（passthrough）
-      this.nodeOutputs.set(node.id, inputs)
+    // 🚫 檢查節點是否被停用（含級聯停用）
+    const isDisabled = node.data.disabled === true
+    const isCascadeDisabled = !isDisabled && this.shouldCascadeDisable(node)
+
+    if (isDisabled || isCascadeDisabled) {
+      // 停用的節點：跳過執行，輸出 null 讓下游也跳過
+      const nullOutputs: Record<string, null> = {}
+      const outgoingEdges = this.findOutgoingEdges(node.id)
+      for (const edge of outgoingEdges) {
+        const key = edge.sourceHandle.replace(/^out-/, '')
+        nullOutputs[key] = null
+      }
+      this.nodeOutputs.set(node.id, nullOutputs)
       this.completedNodes.add(node.id)
       this.pendingNodes.delete(node.id)
 
@@ -183,6 +192,13 @@ export class WorkflowEngine {
         nodeId: node.id,
         nodeType: node.type
       })
+      if (isCascadeDisabled) {
+        this.emit('node:log', {
+          executionId: this.executionId,
+          nodeId: node.id,
+          message: '⏭️ 級聯停用（所有上游節點皆已停用/跳過）'
+        })
+      }
 
       // 觸發下游節點
       await this.triggerDownstream(node.id)
@@ -488,6 +504,34 @@ export class WorkflowEngine {
       'notebook_url'
     ]
     return indexFields.includes(key)
+  }
+
+  /**
+   * 級聯停用判斷：非資料類節點，如果所有上游節點都是停用/跳過，則也視為停用
+   */
+  private shouldCascadeDisable(node: WorkflowNode): boolean {
+    // 資料類節點不參與級聯停用
+    const dataCategories = ['data']
+    if (dataCategories.includes(node.data?.category)) return false
+
+    // 沒有上游連線的節點不適用
+    const incomingEdges = this.findIncomingEdges(node.id)
+    if (incomingEdges.length === 0) return false
+
+    // 檢查所有上游節點是否都已停用或跳過
+    return incomingEdges.every(edge => {
+      const sourceNode = this.findNodeById(edge.source)
+      if (!sourceNode) return true  // 找不到上游節點，視為停用
+
+      // 明確停用
+      if (sourceNode.data.disabled === true) return true
+
+      // 執行時被跳過（包含級聯停用的節點）
+      const sourceExecution = this.execution.nodes.get(edge.source)
+      if (sourceExecution?.status === 'skipped') return true
+
+      return false
+    })
   }
 
   // ── 觸發器輪詢機制 ──────────────────────────────────────────────

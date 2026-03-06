@@ -132,13 +132,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkflowStore } from '../stores/workflow'
 import { NODE_REGISTRY } from '../nodes/registry'
 
 const router = useRouter()
 const store = useWorkflowStore()
+
+// 從後端同步工作流
+onMounted(async () => {
+  await store.syncFromBackend()
+})
 
 const showCreate = ref(false)
 const newName = ref('')

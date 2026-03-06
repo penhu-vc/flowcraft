@@ -1,0 +1,40 @@
+# FlowCraft - 簡單模式 Docker Compose
+# 直接暴露 port，不使用 Gateway
+
+services:
+  flowcraft:
+    container_name: flowcraft
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # 直接映射 port 到 host
+    ports:
+      - "3020:5173"  # 前端（Vite）
+      - "3021:3001"  # 後端（Express + Socket.io）
+    volumes:
+      # 掛載整個專案（保持 hot reload）
+      - .:/app
+      # 排除 node_modules（使用容器內的）
+      - /app/node_modules
+      - /app/server/node_modules
+      # 排除建置檔案
+      - /app/dist
+      - /app/server/dist
+      # Vite 快取
+      - /app/.vite
+      # 持久化設定檔案
+      - ./server/data:/app/server/data
+    environment:
+      # 前端 API URL（透過 host port 訪問後端）
+      - VITE_API_URL=http://localhost:3021
+      - NODE_ENV=development
+      # 後端環境變數
+      - PORT=3001
+    # 單一網路即可
+    networks:
+      - flowcraft-net
+
+networks:
+  flowcraft-net:
+    driver: bridge

@@ -1,0 +1,19 @@
+# FlowCraft Frontend - Vite + Vue 3
+# 支援 hot reload 開發模式
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 安裝依賴（只複製 package.json，加速 rebuild）
+COPY package*.json ./
+RUN npm install
+
+# 其他檔案透過 volume mount 掛載
+# 這樣修改程式碼會即時生效，不需重建 image
+
+EXPOSE 5173
+
+# 開發模式：Vite dev server（支援 hot reload）
+# 使用 --host 0.0.0.0 讓 container 外可以訪問
+CMD ["npm", "run", "dev:client"]

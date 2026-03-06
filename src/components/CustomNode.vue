@@ -1,5 +1,5 @@
 <template>
-  <div class="custom-node" :class="{ selected, disabled: data.disabled, executing: isExecuting, error: hasError, dimmed: isDimmed }">
+  <div class="custom-node" :class="{ selected, disabled: data.disabled, orphan: isOrphan, executing: isExecuting, error: hasError, dimmed: isDimmed }">
 
     <!-- ── INPUT handles (left side, one per visible input port) ── -->
     <Handle
@@ -142,11 +142,16 @@ const outputOrder = computed<string[]>(() => {
 })
 
 // Update node internals when port order changes
-const { updateNodeInternals } = useVueFlow()
+const { updateNodeInternals, edges } = useVueFlow()
+
+// 孤立節點：輸入和輸出都沒有連線，視同停用
+const isOrphan = computed(() => {
+  return !edges.value.some(e => e.source === props.id || e.target === props.id)
+})
 watch([inputOrder, outputOrder], () => {
   // Use setTimeout to ensure DOM has updated
   setTimeout(() => {
-    updateNodeInternals(props.id)
+    updateNodeInternals([props.id])
   }, 0)
 }, { deep: true })
 
@@ -279,6 +284,11 @@ function outputHandleStyle(i: number) {
 .custom-node.disabled .node-card {
   opacity: 0.5;
   filter: grayscale(1);
+}
+
+/* Orphan state - 孤立節點（無任何連線），半透明但不灰階 */
+.custom-node.orphan .node-card {
+  opacity: 0.5;
 }
 .custom-node.disabled .node-header::before {
   content: '🚫';

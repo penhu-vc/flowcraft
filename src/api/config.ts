@@ -3,8 +3,8 @@
  * 統一管理 API 基礎 URL，支援環境變數設定
  */
 
-// 從環境變數讀取，預設為 localhost:3001
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+// 從環境變數讀取，預設為空（使用相對路徑，透過 Gateway）
+export const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 // API 路徑
 export const API_ENDPOINTS = {
@@ -27,6 +27,7 @@ export const API_ENDPOINTS = {
 
   // Prompts 相關
   promptsSegmentMining: `${API_BASE_URL}/api/prompts/segment-mining`,
+  promptsScriptGenerator: `${API_BASE_URL}/api/prompts/script-generator`,
 
   // 工作流同步
   workflowsSync: `${API_BASE_URL}/api/workflows/sync`,

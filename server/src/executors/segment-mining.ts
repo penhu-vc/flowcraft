@@ -65,7 +65,7 @@ export async function executeSegmentMining(
         systemPrompt: SYSTEM_INSTRUCTION,
         model,
         temperature: temperature || 0.3,
-        maxTokens: 16384
+        maxTokens: 8192  // Gemini 2.0 Flash 上限為 8192
     }
 
     emit('node:log', { message: '開始提取立場型口播彈藥...' })
