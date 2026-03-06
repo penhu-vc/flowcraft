@@ -44,3 +44,8 @@ server/session.json
 server/data/workflows.json
 server/data/api-keys.json
 server/data/gemini-settings.json
+server/data/youtube-monitor-state.json
+server/data/*.lock
+
+# NotebookLM session storage
+server/sessions/*.json

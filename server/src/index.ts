@@ -225,8 +225,12 @@ import { handleTelegramWebhook } from './telegram-webhook'
 app.post('/api/telegram/webhook', async (req, res) => {
     try {
         const update = req.body
-        const botToken = process.env.TELEGRAM_BOT_TOKEN || '8299044370:AAGSx2Hkgf_VOTIfB9tNAlQ8W1RddFrStRw'
+        const botToken = process.env.TELEGRAM_BOT_TOKEN
         const clickResponseMessage = process.env.TELEGRAM_CLICK_RESPONSE || '你點擊了標籤：'
+
+        if (!botToken) {
+            throw new Error('TELEGRAM_BOT_TOKEN environment variable is required')
+        }
 
         await handleTelegramWebhook(update, botToken, clickResponseMessage)
 

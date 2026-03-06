@@ -4,7 +4,7 @@
  */
 
 import { getRecentVideos, extractChannelId } from '../utils/youtube-utils'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs'
 import { join, dirname } from 'path'
 
 interface Channel {
@@ -20,6 +20,39 @@ type EmitFn = (event: string, data: unknown) => void
 // State 檔案路徑（記住已處理的影片）
 // 使用 __dirname 確保路徑正確：從 src/executors/ 往上兩層到 server/，再進入 data/
 const STATE_FILE = join(__dirname, '..', '..', 'data', 'youtube-monitor-state.json')
+const LOCK_FILE = join(__dirname, '..', '..', 'data', 'youtube-monitor-state.lock')
+
+// 檔案鎖：嘗試獲取鎖（最多重試 10 次，每次等待 100ms）
+async function acquireLock(emit: EmitFn): Promise<boolean> {
+    const maxRetries = 10
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            // 嘗試建立鎖檔案（exclusive flag 確保原子性）
+            writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' })
+            return true
+        } catch (error) {
+            // 鎖檔案已存在，等待後重試
+            if (i < maxRetries - 1) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+            } else {
+                emit('node:log', { message: '⚠️ 無法獲取檔案鎖（可能有其他執行中的監控）' })
+                return false
+            }
+        }
+    }
+    return false
+}
+
+// 釋放鎖
+function releaseLock(): void {
+    try {
+        if (existsSync(LOCK_FILE)) {
+            unlinkSync(LOCK_FILE)
+        }
+    } catch (error) {
+        // 忽略釋放鎖失敗的錯誤
+    }
+}
 
 // 讀取上次處理的影片 ID
 function getLastProcessedVideoId(): string | null {
@@ -56,11 +89,18 @@ export async function executeYouTubeMonitor(
 ): Promise<unknown> {
     emit('node:log', { message: '🎬 YouTube Monitor 啟動' })
 
-    // 讀取上次處理的影片 ID
-    const lastProcessedVideoId = getLastProcessedVideoId()
-    if (lastProcessedVideoId) {
-        emit('node:log', { message: `📌 上次處理: ${lastProcessedVideoId}` })
+    // 獲取檔案鎖
+    const hasLock = await acquireLock(emit)
+    if (!hasLock) {
+        throw new Error('無法獲取檔案鎖，請稍後重試')
     }
+
+    try {
+        // 讀取上次處理的影片 ID
+        const lastProcessedVideoId = getLastProcessedVideoId()
+        if (lastProcessedVideoId) {
+            emit('node:log', { message: `📌 上次處理: ${lastProcessedVideoId}` })
+        }
 
     // 解析頻道列表
     const channelsJson = config.channels as string || '[]'
@@ -193,20 +233,24 @@ export async function executeYouTubeMonitor(
     // 獲取縮圖 URL
     const thumbnailUrl = `https://img.youtube.com/vi/${video.videoId}/maxresdefault.jpg`
 
-    return {
-        video: {
-            videoId: video.videoId,
+        return {
+            video: {
+                videoId: video.videoId,
+                title: video.title,
+                url: video.url,
+                publishedAt: video.publishedAt,
+                channelName: latest.channelName,
+                channelId: latest.channelId
+            },
+            channel_name: latest.channelName,
             title: video.title,
             url: video.url,
-            publishedAt: video.publishedAt,
-            channelName: latest.channelName,
-            channelId: latest.channelId
-        },
-        channel_name: latest.channelName,
-        title: video.title,
-        url: video.url,
-        thumbnail: thumbnailUrl,
-        duration: 0,  // RSS feed 不提供時長
-        subscribers: 0  // RSS feed 不提供訂閱數
+            thumbnail: thumbnailUrl,
+            duration: 0,  // RSS feed 不提供時長
+            subscribers: 0  // RSS feed 不提供訂閱數
+        }
+    } finally {
+        // 釋放檔案鎖
+        releaseLock()
     }
 }

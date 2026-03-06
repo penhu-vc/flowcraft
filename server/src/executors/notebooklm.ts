@@ -83,13 +83,16 @@ export async function executeNotebookLM(
         headless: false,
         channel: 'chrome'  // 使用系統安裝的 Chrome
     })
-    const context = await browser.newContext({
-        storageState,
-        permissions: ['clipboard-read', 'clipboard-write']  // 自動允許剪貼簿存取
-    })
-    const page = await context.newPage()
+
+    let context
+    let page
 
     try {
+        context = await browser.newContext({
+            storageState,
+            permissions: ['clipboard-read', 'clipboard-write']  // 自動允許剪貼簿存取
+        })
+        page = await context.newPage()
         // ── Step 1: 檢查是否已有對應的 Notebook ──────────────────────
         const mappings = loadMappings()
         const existingNotebook = mappings[url]
@@ -309,8 +312,6 @@ export async function executeNotebookLM(
         )
         emit('node:log', { message: '✅ 結果已記錄到 cache' })
 
-        await browser.close()
-
         // 返回結果，包含 metadata 供下游節點使用
         return {
             result: resultText.trim(),
@@ -322,7 +323,14 @@ export async function executeNotebookLM(
         }
 
     } catch (err) {
-        await browser.close()
         throw err
+    } finally {
+        // 確保瀏覽器總是被關閉，防止記憶體洩漏
+        try {
+            await browser.close()
+            emit('node:log', { message: '✅ 瀏覽器已關閉' })
+        } catch (closeErr) {
+            emit('node:log', { message: '⚠️ 關閉瀏覽器時發生錯誤（可忽略）' })
+        }
     }
 }
