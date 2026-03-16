@@ -27,6 +27,7 @@
     <div class="topbar-actions">
       <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignCenter" title="垂直置中對齊">⫼ 置中</button>
       <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignHorizontal" title="水平對齊">⫻ 水平</button>
+      <button class="btn btn-secondary btn-sm" @click="applyAutoLayout" title="自動排版節點">✨ 自動排版</button>
       <button class="btn btn-secondary btn-sm" @click="onSave">💾 儲存</button>
       <button class="btn btn-secondary btn-sm" @click="store.exportWorkflow(wfId)">⬇️ 匯出</button>
       <button
@@ -140,13 +141,93 @@
         <MiniMap :node-color="nodeColor" />
 
         <template #node-custom="props">
-          <CustomNode v-bind="props" />
+          <CustomNode v-bind="props" @retryNode="handleRetryNode" />
         </template>
       </VueFlow>
 
       <!-- Save toast -->
       <Transition name="toast">
         <div v-if="savedToast" class="save-toast">✅ 已儲存</div>
+      </Transition>
+
+      <!-- Node Search Panel -->
+      <Transition name="search">
+        <div v-if="showSearch" class="search-panel">
+          <div class="search-header">
+            <input
+              ref="searchInputRef"
+              class="search-input"
+              v-model="searchQuery"
+              placeholder="🔍 搜尋節點... (↑↓ 選擇, Enter 跳轉, ESC 關閉)"
+              @keydown.esc="closeSearch"
+            />
+            <button class="btn btn-icon btn-sm" @click="closeSearch">✕</button>
+          </div>
+          <div class="search-results">
+            <div v-if="searchResults.length === 0 && searchQuery" class="search-empty">
+              沒有找到符合的節點
+            </div>
+            <div
+              v-for="(node, index) in searchResults"
+              :key="node.id"
+              class="search-result-item"
+              :class="{ active: index === selectedResultIndex }"
+              @click="jumpToNode(node.id); closeSearch()"
+            >
+              <span class="search-result-icon" :style="{ background: CATEGORY_COLORS[node.data.category] + '22', color: CATEGORY_COLORS[node.data.category] }">
+                {{ node.data.icon }}
+              </span>
+              <div class="search-result-content">
+                <div class="search-result-name">{{ node.data.label }}</div>
+                <div class="search-result-type">{{ node.data.nodeType }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Execution Stats Panel -->
+      <Transition name="fade">
+        <div v-if="executionStore.executionStats" class="execution-stats-panel">
+          <div class="stats-header">
+            <span class="stats-icon">📊</span>
+            <span class="stats-title">執行時間分析</span>
+          </div>
+          <div class="stats-body">
+            <!-- Summary Stats -->
+            <div class="stats-summary">
+              <div class="stat-item">
+                <div class="stat-label">總執行時間</div>
+                <div class="stat-value">{{ formatDuration(executionStore.executionStats.totalDuration || 0) }}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">已完成節點</div>
+                <div class="stat-value">{{ executionStore.executionStats.completedCount }} / {{ executionStore.executionStats.totalCount }}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">平均時間</div>
+                <div class="stat-value">{{ formatDuration(executionStore.executionStats.avgDuration) }}</div>
+              </div>
+            </div>
+
+            <!-- Slowest Nodes -->
+            <div v-if="executionStore.executionStats.slowestNodes.length > 0" class="slowest-nodes">
+              <div class="slowest-header">🐌 最慢的節點</div>
+              <div class="slowest-list">
+                <div
+                  v-for="(node, index) in executionStore.executionStats.slowestNodes"
+                  :key="node.nodeId"
+                  class="slowest-node-item"
+                  @click="jumpToNode(node.nodeId)"
+                >
+                  <span class="slowest-rank">#{{ index + 1 }}</span>
+                  <span class="slowest-node-id">{{ node.nodeId }}</span>
+                  <span class="slowest-duration">{{ formatDuration(node.duration || 0) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </Transition>
 
       <!-- Execution Log Panel -->
@@ -360,6 +441,8 @@ import { useHistory } from '../composables/useHistory'
 import { useExecutionStore } from '../stores/execution'
 import { useNodeCacheStore } from '../stores/nodeCache'
 import type { Workflow } from '../api/workflow'
+import { useNodeSearch } from '../composables/useNodeSearch'
+import { useAutoLayout } from '../composables/useAutoLayout'
 
 // Map of customConfig name -> component
 const CUSTOM_CONFIG_MAP: Record<string, any> = {
@@ -388,6 +471,22 @@ const edges = ref<Edge[]>(wf.value?.edges || [])
 
 // Undo/Redo 歷史管理
 const { canUndo, canRedo, recordHistory, initHistory, undo, redo } = useHistory(nodes, edges)
+
+// 節點搜尋功能
+const {
+  searchQuery,
+  showSearch,
+  searchResults,
+  selectedResultIndex,
+  openSearch,
+  closeSearch,
+  jumpToNode,
+  selectNextResult,
+  selectPrevResult
+} = useNodeSearch(nodes)
+
+// 自動排版功能
+const { autoLayout } = useAutoLayout()
 
 // 觸發器設定
 const triggerMode = ref<'fallback' | 'sequential'>(wf.value?.triggerMode || 'fallback')
@@ -423,6 +522,9 @@ watch(wf, (newWf) => {
 const editingName = ref(false)
 const editingNameValue = ref('')
 const nameInputRef = ref<HTMLInputElement | null>(null)
+
+// Search input ref
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
 function startEditName() {
   if (!wf.value) return
@@ -630,6 +732,39 @@ function alignHorizontal() {
   recordHistory()
 }
 
+// 自動排版
+function applyAutoLayout() {
+  const layoutedNodes = autoLayout(nodes.value, edges.value, 'LR')
+  nodes.value = layoutedNodes
+  recordHistory()
+  showUndoRedoToast('✨ 自動排版完成')
+}
+
+// 格式化執行時間
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const minutes = Math.floor(ms / 60000)
+  const seconds = Math.floor((ms % 60000) / 1000)
+  return `${minutes}m ${seconds}s`
+}
+
+// 重試失敗的節點
+function handleRetryNode(nodeId: string) {
+  const nodeExec = executionStore.getNodeExecution(nodeId)
+  if (!nodeExec) return
+
+  // 清除該節點的錯誤狀態
+  executionStore.updateNodeStatus(nodeId, 'pending', {
+    error: undefined,
+    completedAt: undefined,
+    duration: undefined
+  })
+
+  // 顯示提示
+  showUndoRedoToast(`🔄 ${nodeId} 已重置，請重新執行工作流`)
+}
+
 // 一鍵複製指令（script-generator）
 const copyPromptLabel = ref('📋 一鍵複製指令')
 async function copyScriptGeneratorPrompt() {
@@ -699,9 +834,47 @@ function pasteNode() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  // Check if user is typing in an input/textarea
+  // Check if user is typing in an input/textarea (except search box)
   const target = e.target as HTMLElement
+  const isSearchInput = target.classList.contains('search-input')
+
+  // Allow ESC in search to close it
+  if (showSearch.value && e.key === 'Escape') {
+    e.preventDefault()
+    closeSearch()
+    return
+  }
+
+  // Allow arrow keys and Enter in search
+  if (showSearch.value && isSearchInput) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectNextResult()
+      return
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectPrevResult()
+      return
+    } else if (e.key === 'Enter' && searchResults.value.length > 0) {
+      e.preventDefault()
+      const selectedNode = searchResults.value[selectedResultIndex.value]
+      if (selectedNode) {
+        jumpToNode(selectedNode.id)
+        closeSearch()
+      }
+      return
+    }
+    return
+  }
+
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+
+  // Open search with '/' key
+  if (e.key === '/') {
+    e.preventDefault()
+    openSearch()
+    return
+  }
 
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
   const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey
@@ -758,6 +931,13 @@ function toggleNodeDisabled() {
   const status = node.data.disabled ? '🚫 已停用' : '✅ 已啟用'
   console.log(`${status}: ${node.data.label}`)
 }
+
+// Watch search panel to auto-focus input
+watch(showSearch, (value) => {
+  if (value) {
+    setTimeout(() => searchInputRef.value?.focus(), 100)
+  }
+})
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
@@ -1501,5 +1681,247 @@ input:disabled + .slider {
 .modal-enter-from .script-modal,
 .modal-leave-to .script-modal {
   transform: scale(0.95) translateY(20px);
+}
+
+/* Node Search Panel */
+.search-panel {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 600px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.search-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+}
+
+.search-input {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.1);
+}
+
+.search-results {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.search-empty {
+  padding: 32px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-bottom: 4px;
+}
+
+.search-result-item:hover {
+  background: var(--bg-hover);
+}
+
+.search-result-item.active {
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid var(--accent-cyan);
+}
+
+.search-result-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.search-result-content {
+  flex: 1;
+}
+
+.search-result-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.search-result-type {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.search-enter-active,
+.search-leave-active {
+  transition: all 0.2s ease;
+}
+
+.search-enter-from,
+.search-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-10px);
+}
+
+/* Execution Stats Panel */
+.execution-stats-panel {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 360px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 90;
+  overflow: hidden;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-icon {
+  font-size: 16px;
+}
+
+.stats-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stats-body {
+  padding: 16px;
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.slowest-nodes {
+  margin-top: 16px;
+}
+
+.slowest-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.slowest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slowest-node-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.slowest-node-item:hover {
+  background: var(--bg-hover);
+  transform: translateX(2px);
+}
+
+.slowest-rank {
+  font-size: 11px;
+  font-weight: 700;
+  color: orange;
+  width: 24px;
+}
+
+.slowest-node-id {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slowest-duration {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>

@@ -36,6 +36,9 @@
               取得 API Key →
             </a>
           </p>
+          <p style="color: var(--text-secondary); margin-bottom: 16px;">
+            此設定會同時供 Gemini 節點與 Veo Studio 頁面共用。
+          </p>
 
           <!-- 狀態 -->
           <div class="status-box" :class="geminiStatus.connected ? 'status-connected' : 'status-disconnected'">
@@ -65,6 +68,9 @@
         <div v-else class="mode-content">
           <p style="color: var(--text-muted); margin-bottom: 16px;">
             使用 GCP 服務帳號憑證，透過 Vertex AI 呼叫 Gemini。適合企業或需要更多控制的場景。
+          </p>
+          <p style="color: var(--text-secondary); margin-bottom: 16px;">
+            若 Veo 要走 Vertex AI，也會沿用這組憑證。
           </p>
 
           <!-- 狀態 -->

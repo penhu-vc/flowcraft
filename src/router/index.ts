@@ -35,6 +35,10 @@ const router = createRouter({
       path: '/settings',
       component: () => import('../views/Settings.vue'),
     },
+    {
+      path: '/veo',
+      component: () => import('../views/VeoStudio.vue'),
+    },
   ],
 })
 

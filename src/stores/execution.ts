@@ -65,6 +65,40 @@ export const useExecutionStore = defineStore('execution', () => {
     return null
   })
 
+  // 執行時間統計
+  const executionStats = computed(() => {
+    if (!currentExecution.value) return null
+
+    const nodes = Array.from(currentExecution.value.nodes.values())
+    const completedNodes = nodes.filter(n => n.duration !== undefined)
+
+    if (completedNodes.length === 0) return null
+
+    // 找出最慢的節點（Top 5）
+    const sortedByDuration = [...completedNodes].sort((a, b) =>
+      (b.duration || 0) - (a.duration || 0)
+    )
+    const slowestNodes = sortedByDuration.slice(0, 5)
+
+    // 計算平均執行時間
+    const totalNodeDuration = completedNodes.reduce((sum, n) => sum + (n.duration || 0), 0)
+    const avgDuration = completedNodes.length > 0 ? totalNodeDuration / completedNodes.length : 0
+
+    return {
+      totalDuration: currentExecution.value.duration,
+      slowestNodes,
+      avgDuration,
+      completedCount: completedNodes.length,
+      totalCount: nodes.length
+    }
+  })
+
+  // 檢查節點是否為最慢的節點之一
+  function isSlowestNode(nodeId: string): boolean {
+    if (!executionStats.value) return false
+    return executionStats.value.slowestNodes.some(n => n.nodeId === nodeId)
+  }
+
   // Actions
   function startExecution(executionId: string, workflowId: string) {
     console.log('[Store] startExecution called:', executionId, workflowId)
@@ -197,6 +231,7 @@ export const useExecutionStore = defineStore('execution', () => {
     isRunning,
     executionId,
     runningNodeId,
+    executionStats,
 
     // Actions
     startExecution,
@@ -207,6 +242,7 @@ export const useExecutionStore = defineStore('execution', () => {
     failExecution,
     clearExecution,
     getNodeExecution,
+    isSlowestNode,
     showScriptResult,
     closeScriptResult
   }

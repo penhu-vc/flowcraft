@@ -136,6 +136,27 @@ export const useWorkflowStore = defineStore('workflow', () => {
         }
     }
 
+    function duplicateWorkflow(id: string) {
+        const original = getWorkflow(id)
+        if (!original) return null
+
+        const duplicate: WorkflowMeta = {
+            id: `wf-${Date.now()}`,
+            name: `${original.name} - 副本`,
+            description: original.description,
+            active: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            nodes: JSON.parse(JSON.stringify(original.nodes)), // Deep copy
+            edges: JSON.parse(JSON.stringify(original.edges)), // Deep copy
+            triggerMode: original.triggerMode
+        }
+
+        workflows.value.unshift(duplicate)
+        saveToStorage(workflows.value)
+        return duplicate
+    }
+
     async function syncFromBackend() {
         const backendWorkflows = await loadFromBackend()
         if (backendWorkflows.length > 0) {
@@ -156,6 +177,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         getWorkflow,
         exportWorkflow,
         importWorkflow,
+        duplicateWorkflow,
         syncFromBackend,
     }
 })

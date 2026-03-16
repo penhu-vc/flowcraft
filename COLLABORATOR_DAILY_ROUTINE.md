@@ -98,14 +98,17 @@ case 'youtube-summary':
 ⚠️ 注意：加在其他 case 後面，記得 import
 ```
 
-### Step 3: 測試
+### Step 3: 啟動與測試
 
 ```bash
-# 啟動前端（新終端）
-npm run dev
+# 一鍵停止舊程序、清快取、重啟前後端並等待健康檢查
+npm run dev:up
 
-# 啟動後端（新終端）
-cd server && npm run dev
+# 預熱常用頁與 API，避免首次編譯卡住
+npm run dev:warm
+
+# 如果畫面或 API 異常，先跑醫生檢查
+npm run dev:doctor
 
 # 測試：
 # 1. 到 http://localhost:5173

@@ -100,6 +100,7 @@
               <input type="checkbox" :checked="wf.active" @change="store.toggleActive(wf.id)" />
               <span class="toggle-slider"></span>
             </label>
+            <button class="btn btn-secondary btn-sm" @click.stop="duplicateWorkflow(wf.id)" title="複製工作流">📑 複製</button>
             <button class="btn btn-secondary btn-sm" @click.stop="store.exportWorkflow(wf.id)">⬇️ 匯出</button>
             <button class="btn btn-secondary btn-sm" @click.stop="router.push(`/editor/${wf.id}`)">✏️ 編輯</button>
             <button class="btn btn-danger btn-sm" style="margin-left:auto;" @click.stop="confirmDelete(wf.id, wf.name)">🗑️</button>
@@ -198,6 +199,18 @@ function doCreate() {
   newName.value = ''
   newDesc.value = ''
   router.push(`/editor/${wf.id}`)
+}
+
+function duplicateWorkflow(id: string) {
+  const duplicate = store.duplicateWorkflow(id)
+  if (duplicate) {
+    // Show toast notification
+    const toast = document.createElement('div')
+    toast.textContent = `✅ 已複製「${duplicate.name}」`
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--accent-purple);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.3s ease;'
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+  }
 }
 
 function confirmDelete(id: string, name: string) {

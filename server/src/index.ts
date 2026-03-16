@@ -8,6 +8,7 @@ import { executeNode } from './executor'
 import { startAuthFlow } from './auth/saveSession'
 import { WorkflowEngine } from './execution/WorkflowEngine'
 import { Workflow } from './execution/types'
+import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from './services/veo'
 
 const app = express()
 const httpServer = createServer(app)
@@ -24,7 +25,7 @@ const io = new SocketIO(httpServer, {
 })
 
 app.use(cors({ origin: allowedOrigins }))
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
 
 // ── Health check ──────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -249,11 +250,72 @@ const SETTINGS_DIR = join(__dirname, '../data')
 const GCP_CREDENTIALS_FILE = join(SETTINGS_DIR, 'gcp-credentials.json')
 const GEMINI_SETTINGS_FILE = join(SETTINGS_DIR, 'gemini-settings.json')
 const API_KEYS_FILE = join(SETTINGS_DIR, 'api-keys.json')
+const GENERATED_FILES_DIR = join(SETTINGS_DIR, 'generated')
 
 // 確保 data 目錄存在
 if (!existsSync(SETTINGS_DIR)) {
     mkdirSync(SETTINGS_DIR, { recursive: true })
 }
+
+if (!existsSync(GENERATED_FILES_DIR)) {
+    mkdirSync(GENERATED_FILES_DIR, { recursive: true })
+}
+
+app.use('/generated', express.static(GENERATED_FILES_DIR))
+
+// ── Veo Prompt Optimizer ──
+import { optimizeVeoPrompt } from './veo-prompt-optimizer'
+
+app.post('/api/veo/optimize-prompt', async (req, res) => {
+    try {
+        const { prompt, mode } = req.body
+        if (!prompt || typeof prompt !== 'string') {
+            return res.status(400).json({ ok: false, error: 'prompt is required' })
+        }
+        const result = await optimizeVeoPrompt(prompt, mode || 'text')
+        res.json({ ok: true, ...result })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/veo/status', (_req, res) => {
+    res.json(getVeoStatus())
+})
+
+app.get('/api/veo/jobs', (_req, res) => {
+    res.json({ ok: true, jobs: listVeoJobs() })
+})
+
+app.get('/api/veo/jobs/:id', async (req, res) => {
+    try {
+        const job = await refreshVeoJob(req.params.id)
+        res.json({ ok: true, job })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.post('/api/veo/generate', async (req, res) => {
+    try {
+        const job = await createVeoJob(req.body)
+        res.json({ ok: true, job })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.delete('/api/veo/jobs/:id', (req, res) => {
+    const deleted = deleteVeoJob(req.params.id)
+    if (!deleted) {
+        return res.status(404).json({ ok: false, error: 'Job not found' })
+    }
+
+    res.json({ ok: true })
+})
 
 // 檢查 Gemini 設定狀態（統一入口）
 app.get('/api/settings/gemini/status', (_req, res) => {

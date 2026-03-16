@@ -1,5 +1,5 @@
 <template>
-  <div class="custom-node" :class="{ selected, disabled: data.disabled, orphan: isOrphan, executing: isExecuting, error: hasError, dimmed: isDimmed }">
+  <div class="custom-node" :class="{ selected, disabled: data.disabled, orphan: isOrphan, executing: isExecuting, error: hasError, dimmed: isDimmed, slowest: isSlowestNode }">
 
     <!-- ── INPUT handles (left side, one per visible input port) ── -->
     <Handle
@@ -17,6 +17,11 @@
       {{ data.triggerOrder }}
     </div>
 
+    <!-- Retry Button (for failed nodes) -->
+    <button v-if="hasError" class="retry-button" @click="retryNode" title="重試此節點">
+      🔄
+    </button>
+
     <!-- ── Node card ── -->
     <div class="node-card" :style="{ borderColor: color }">
       <!-- Header -->
@@ -25,6 +30,11 @@
         <div class="node-header-text">
           <div class="node-name">{{ data.label }}</div>
           <div class="node-cat" :style="{ color }">{{ categoryLabel }}</div>
+        </div>
+        <!-- Execution time badge -->
+        <div v-if="nodeDuration !== undefined" class="duration-badge" :class="{ slowest: isSlowestNode }">
+          <span class="duration-icon">⏱️</span>
+          <span class="duration-text">{{ formatDuration(nodeDuration) }}</span>
         </div>
       </div>
 
@@ -103,6 +113,10 @@ const props = defineProps<{
   selected: boolean
 }>()
 
+const emit = defineEmits<{
+  retryNode: [nodeId: string]
+}>()
+
 const executionStore = useExecutionStore()
 const nodeStatus = computed(() => executionStore.getNodeExecution(props.id)?.status)
 const isExecuting = computed(() => nodeStatus.value === 'running')
@@ -113,6 +127,24 @@ const isDimmed = computed(() => {
   const runningNodeId = executionStore.runningNodeId
   return runningNodeId && runningNodeId !== props.id && !isExecuting.value
 })
+
+// Execution time
+const nodeDuration = computed(() => executionStore.getNodeExecution(props.id)?.duration)
+const isSlowestNode = computed(() => executionStore.isSlowestNode(props.id))
+
+// Format duration in ms to readable format
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const minutes = Math.floor(ms / 60000)
+  const seconds = Math.floor((ms % 60000) / 1000)
+  return `${minutes}m ${seconds}s`
+}
+
+// Retry failed node
+function retryNode() {
+  emit('retryNode', props.id)
+}
 
 const color = computed(() => CATEGORY_COLORS[props.data.category] || '#6b7280')
 const def = computed(() => getNodeDef(props.data.nodeType))
@@ -278,6 +310,77 @@ function outputHandleStyle(i: number) {
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   z-index: 10;
   border: 2px solid var(--bg-primary);
+}
+
+/* Retry Button */
+.retry-button {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 28px;
+  height: 28px;
+  background: #ff6b6b;
+  color: white;
+  border: 2px solid var(--bg-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.4);
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+  background: #ff5252;
+  transform: scale(1.1) rotate(180deg);
+  box-shadow: 0 4px 12px rgba(255, 0, 0, 0.6);
+}
+
+.retry-button:active {
+  transform: scale(0.95) rotate(180deg);
+}
+
+/* Execution Duration Badge */
+.duration-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  background: rgba(100, 100, 100, 0.3);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  margin-left: auto;
+  transition: all 0.3s ease;
+}
+
+.duration-badge .duration-icon {
+  font-size: 9px;
+}
+
+.duration-badge.slowest {
+  background: rgba(255, 165, 0, 0.3);
+  color: orange;
+  animation: pulse-duration 2s ease-in-out infinite;
+}
+
+@keyframes pulse-duration {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 165, 0, 0.1);
+  }
+}
+
+/* Slowest node border highlight */
+.custom-node.slowest .node-card {
+  border-color: orange !important;
 }
 
 /* Disabled state - grayscale */

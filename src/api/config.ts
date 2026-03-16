@@ -29,6 +29,12 @@ export const API_ENDPOINTS = {
   promptsSegmentMining: `${API_BASE_URL}/api/prompts/segment-mining`,
   promptsScriptGenerator: `${API_BASE_URL}/api/prompts/script-generator`,
 
+  // Veo 相關
+  veoStatus: `${API_BASE_URL}/api/veo/status`,
+  veoGenerate: `${API_BASE_URL}/api/veo/generate`,
+  veoJobs: `${API_BASE_URL}/api/veo/jobs`,
+  veoOptimizePrompt: `${API_BASE_URL}/api/veo/optimize-prompt`,
+
   // 工作流同步
   workflowsSync: `${API_BASE_URL}/api/workflows/sync`,
 }
