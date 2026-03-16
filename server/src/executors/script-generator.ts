@@ -43,7 +43,7 @@ export async function executeScriptGenerator(
         aiProvider = 'gemini',
         aiApiKey = '',
         aiBaseUrl = '',
-        model = 'gemini-2.0-flash',
+        model = 'gemini-2.5-flash',
         temperature = 1.0
     } = rawConfig
 

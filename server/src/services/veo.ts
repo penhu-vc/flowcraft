@@ -124,27 +124,24 @@ function getGeminiSettings(): { mode: VeoMode; apiKey?: string } {
 }
 
 function createClient() {
-  const settings = getGeminiSettings()
-
-  if (settings.mode === 'apiKey') {
-    if (!settings.apiKey) {
-      throw new Error('Gemini API Key 未設定。')
-    }
-
-    return {
-      authMode: settings.mode,
-      client: new GoogleGenAI({ apiKey: settings.apiKey }),
-    }
-  }
-
+  // Veo video generation requires Vertex AI (generateVideos, generateAudio not supported in Gemini API)
+  // Always use GCP credentials regardless of gemini-settings.json mode
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
   if (!existsSync(credentialsPath)) {
-    throw new Error('GCP 憑證不存在，無法使用 Vertex AI。')
+    // Fallback to API Key mode for non-video operations (e.g. prompt optimization)
+    const settings = getGeminiSettings()
+    if (settings.mode === 'apiKey' && settings.apiKey) {
+      return {
+        authMode: settings.mode,
+        client: new GoogleGenAI({ apiKey: settings.apiKey }),
+      }
+    }
+    throw new Error('Veo 需要 GCP 憑證（Vertex AI）才能生成影片。請到設定頁上傳 GCP 憑證。')
   }
 
   const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8'))
   return {
-    authMode: settings.mode,
+    authMode: 'gcp' as const,
     client: new GoogleGenAI({
       vertexai: true,
       project: credentials.project_id,

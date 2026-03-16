@@ -13,7 +13,7 @@ type EmitFn = (event: string, data: unknown) => void
 export interface GeminiConfig {
     prompt: string          // User prompt
     systemPrompt?: string   // Optional system instruction
-    model?: string          // Default: gemini-2.0-flash-exp
+    model?: string          // Default: gemini-2.5-flash
     temperature?: number    // Default: 1.0
     maxTokens?: number      // Default: 8192
 }
@@ -70,7 +70,7 @@ async function callWithApiKey(
     const genAI = new GoogleGenerativeAI(apiKey)
 
     const generativeModel = genAI.getGenerativeModel({
-        model: config.model || 'gemini-2.0-flash-exp',
+        model: config.model || 'gemini-2.5-flash',
         systemInstruction: config.systemPrompt || undefined,
         generationConfig: {
             temperature: config.temperature,
@@ -114,7 +114,7 @@ async function callWithGCP(
     })
 
     const generativeModel = vertexAI.getGenerativeModel({
-        model: config.model || 'gemini-2.0-flash-exp',
+        model: config.model || 'gemini-2.5-flash',
         systemInstruction: config.systemPrompt || undefined,
         generationConfig: {
             temperature: config.temperature,
@@ -140,7 +140,7 @@ export async function executeGemini(
     const {
         prompt,
         systemPrompt = '',
-        model = 'gemini-2.0-flash-exp',
+        model = 'gemini-2.5-flash',
         temperature = 1.0,
         maxTokens = 8192
     } = config as unknown as GeminiConfig

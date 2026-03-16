@@ -93,7 +93,7 @@ async function routeSections(userPrompt: string): Promise<string[]> {
         {
             prompt: userPrompt,
             systemPrompt: ROUTER_SYSTEM,
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             temperature: 0,
             maxTokens: 256
         },
@@ -190,7 +190,7 @@ export async function optimizeVeoPrompt(userPrompt: string, mode: string = 'text
         {
             prompt: `Generation mode: ${mode.toUpperCase()}\n${modeHint}\n\nOptimize this video description into a professional Veo 3 prompt:\n\n${userPrompt}`,
             systemPrompt,
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             temperature: 0.7,
             maxTokens: 3000
         },

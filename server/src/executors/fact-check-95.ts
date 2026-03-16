@@ -74,7 +74,7 @@ export async function executeFactCheck95(
         aiProvider = 'gemini',
         aiApiKey = '',
         aiBaseUrl = '',
-        model = 'gemini-2.0-flash',
+        model = 'gemini-2.5-flash',
         customModel,
         youtubeUrl: configYoutubeUrl,
         videoTitle
@@ -85,7 +85,7 @@ export async function executeFactCheck95(
     const startTime = Date.now()
 
     // 處理模型選擇
-    const selectedModel = model === 'custom' ? (customModel || 'gemini-2.0-flash') : model
+    const selectedModel = model === 'custom' ? (customModel || 'gemini-2.5-flash') : model
 
     emit('node:log', { message: '🔍 事實查核 95 改寫啟動' })
     emit('node:log', { message: `AI Provider: ${aiProvider}` })

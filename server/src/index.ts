@@ -9,6 +9,7 @@ import { startAuthFlow } from './auth/saveSession'
 import { WorkflowEngine } from './execution/WorkflowEngine'
 import { Workflow } from './execution/types'
 import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from './services/veo'
+import { createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from './services/nano'
 
 const app = express()
 const httpServer = createServer(app)
@@ -263,6 +264,41 @@ if (!existsSync(GENERATED_FILES_DIR)) {
 
 app.use('/generated', express.static(GENERATED_FILES_DIR))
 
+// ── Asset Upload (素材囊持久化) ──────────────────────────────────
+const ASSETS_DIR = join(GENERATED_FILES_DIR, 'assets')
+if (!existsSync(ASSETS_DIR)) {
+    mkdirSync(ASSETS_DIR, { recursive: true })
+}
+
+app.post('/api/assets/upload', (req, res) => {
+    try {
+        const { base64, mimeType, filename } = req.body
+        if (!base64 || !mimeType) {
+            return res.status(400).json({ ok: false, error: 'base64 and mimeType required' })
+        }
+        const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'bin'
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        const fname = `${id}.${ext}`
+        const data = base64.replace(/^data:[^;]+;base64,/, '')
+        writeFileSync(join(ASSETS_DIR, fname), Buffer.from(data, 'base64'))
+        res.json({ ok: true, url: `/generated/assets/${fname}`, filename: filename || fname })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/assets', (_req, res) => {
+    try {
+        const files = existsSync(ASSETS_DIR)
+            ? require('fs').readdirSync(ASSETS_DIR).filter((f: string) => !f.startsWith('.'))
+            : []
+        res.json({ ok: true, files: files.map((f: string) => `/generated/assets/${f}`) })
+    } catch {
+        res.json({ ok: true, files: [] })
+    }
+})
+
 // ── Veo Prompt Optimizer ──
 import { optimizeVeoPrompt } from './veo-prompt-optimizer'
 
@@ -314,6 +350,63 @@ app.delete('/api/veo/jobs/:id', (req, res) => {
         return res.status(404).json({ ok: false, error: 'Job not found' })
     }
 
+    res.json({ ok: true })
+})
+
+// ── Nano Banana Pro (Image Generation) ──
+import { optimizeNanoPrompt } from './nano-prompt-optimizer'
+
+app.post('/api/nano/optimize-prompt', async (req, res) => {
+    try {
+        const { prompt, mode } = req.body
+        if (!prompt || typeof prompt !== 'string') {
+            return res.status(400).json({ ok: false, error: 'prompt is required' })
+        }
+        const result = await optimizeNanoPrompt(prompt, mode || 'text')
+        res.json({ ok: true, ...result })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.post('/api/nano/describe-image', async (req, res) => {
+    try {
+        const { image, aspects } = req.body
+        if (!image?.base64Data) {
+            return res.status(400).json({ ok: false, error: 'image is required' })
+        }
+        const result = await describeImage(image, aspects)
+        res.json({ ok: true, description: result })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.get('/api/nano/status', (_req, res) => {
+    res.json(getNanoStatus())
+})
+
+app.get('/api/nano/jobs', (_req, res) => {
+    res.json({ ok: true, jobs: listNanoJobs() })
+})
+
+app.post('/api/nano/generate', async (req, res) => {
+    try {
+        const job = await createNanoJob(req.body)
+        res.json({ ok: true, job })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+app.delete('/api/nano/jobs/:id', (req, res) => {
+    const deleted = deleteNanoJob(req.params.id)
+    if (!deleted) {
+        return res.status(404).json({ ok: false, error: 'Job not found' })
+    }
     res.json({ ok: true })
 })
 

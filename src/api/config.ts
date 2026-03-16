@@ -35,6 +35,12 @@ export const API_ENDPOINTS = {
   veoJobs: `${API_BASE_URL}/api/veo/jobs`,
   veoOptimizePrompt: `${API_BASE_URL}/api/veo/optimize-prompt`,
 
+  // Nano Banana Pro 相關
+  nanoStatus: `${API_BASE_URL}/api/nano/status`,
+  nanoGenerate: `${API_BASE_URL}/api/nano/generate`,
+  nanoJobs: `${API_BASE_URL}/api/nano/jobs`,
+  nanoOptimizePrompt: `${API_BASE_URL}/api/nano/optimize-prompt`,
+
   // 工作流同步
   workflowsSync: `${API_BASE_URL}/api/workflows/sync`,
 }

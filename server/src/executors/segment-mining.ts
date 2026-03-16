@@ -41,7 +41,7 @@ export async function executeSegmentMining(
         aiProvider = 'gemini',
         aiApiKey = '',
         aiBaseUrl = '',
-        model = 'gemini-2.0-flash',
+        model = 'gemini-2.5-flash',
         temperature = 0.3
     } = config as unknown as SegmentMiningConfig
 

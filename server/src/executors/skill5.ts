@@ -148,7 +148,7 @@ export async function executeSkill5(
         forbiddenTerms = '',
         ctaExempt = '留言,按讚,收藏,轉發,訂閱,關注,加入1%,成為1%',
         temperature = 1.0,
-        model = 'gemini-2.0-flash',
+        model = 'gemini-2.5-flash',
         customModel,
         youtubeUrl: configYoutubeUrl,
         videoTitle
@@ -157,7 +157,7 @@ export async function executeSkill5(
     if (!source) throw new Error('Skill5 executor: source is required')
 
     const startTime = Date.now()
-    const selectedModel = model === 'custom' ? (customModel || 'gemini-2.0-flash') : model
+    const selectedModel = model === 'custom' ? (customModel || 'gemini-2.5-flash') : model
 
     emit('node:log', { message: '📝 Script Pipeline Producer 啟動（步驟 1~5 自動化）' })
     emit('node:log', { message: `AI Provider: ${aiProvider}` })

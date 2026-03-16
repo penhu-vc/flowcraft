@@ -1,15 +1,42 @@
 <template>
   <div class="topbar">
-    <span class="topbar-title">🎬 Veo Studio</span>
+    <span class="topbar-title">🎬 AI Studio</span>
     <div class="topbar-actions">
       <span class="badge" :class="statusBadgeClass">
-        {{ veoStatus.configured ? `已連線 ${statusLabel}` : '尚未設定 Veo' }}
+        {{ veoStatus.configured ? `已連線 ${statusLabel}` : '尚未設定' }}
       </span>
       <button class="btn btn-secondary btn-sm" @click="loadAll">重新整理</button>
     </div>
   </div>
 
   <div class="page-content veo-page">
+    <!-- Tab Switch -->
+    <div class="studio-tabs">
+      <button
+        class="studio-tab"
+        :class="{ active: activeTab === 'video' }"
+        @click="activeTab = 'video'"
+      >
+        🎬 Veo 影片
+      </button>
+      <button
+        class="studio-tab"
+        :class="{ active: activeTab === 'image' }"
+        @click="activeTab = 'image'"
+      >
+        🖼️ Nano 圖片
+      </button>
+    </div>
+
+    <!-- Image Tab -->
+    <NanoImageTab
+      v-if="activeTab === 'image'"
+      ref="nanoTabRef"
+      :configured="veoStatus.configured"
+    />
+
+    <!-- Video Tab (existing content) -->
+    <template v-if="activeTab === 'video'">
     <section class="veo-hero card">
       <div class="veo-hero-copy">
         <span class="veo-kicker">Google Veo 直連工作台</span>
@@ -230,7 +257,7 @@
             />
           </div>
 
-          <div v-if="form.sourceMode === 'image' || form.sourceMode === 'frames'" class="asset-block">
+          <div v-if="form.sourceMode === 'image' || form.sourceMode === 'frames'" class="asset-block" @dragover.prevent @drop="onStartImageDrop">
             <div class="asset-head">
               <span>起始圖片</span>
               <div class="asset-head-actions">
@@ -271,7 +298,7 @@
             </div>
           </div>
 
-          <div v-if="form.sourceMode === 'frames'" class="asset-block">
+          <div v-if="form.sourceMode === 'frames'" class="asset-block" @dragover.prevent @drop="onEndImageDrop">
             <div class="asset-head">
               <span>結尾圖片</span>
               <div class="asset-head-actions">
@@ -333,7 +360,7 @@
                     </div>
                   </template>
                   <template v-else>
-                    <label v-if="canAddRef" class="ref-slot-empty">
+                    <label v-if="canAddRef" class="ref-slot-empty" @dragover.prevent @drop.prevent="onRefSlotDrop($event, slot - 1)">
                       <span class="ref-slot-plus">+</span>
                       <span class="ref-slot-label">上傳圖片</span>
                       <input type="file" accept="image/*" hidden @change="onRefSlotUpload($event, slot - 1)" />
@@ -362,7 +389,7 @@
             </button>
           </div>
 
-          <div v-if="form.sourceMode === 'extend'" class="asset-block">
+          <div v-if="form.sourceMode === 'extend'" class="asset-block" @dragover.prevent @drop="onVideoDrop">
             <div class="asset-head">
               <span>延長既有影片</span>
               <label class="btn btn-secondary btn-sm">
@@ -490,13 +517,20 @@
             <p v-if="job.error" class="error-text">{{ job.error }}</p>
 
             <div v-if="job.outputs.length > 0" class="video-grid">
-              <div v-for="output in job.outputs" :key="`${job.id}-${output.index}`" class="video-card">
+              <div v-for="output in job.outputs" :key="`${job.id}-${output.index}`" class="video-card media-card-wrap">
                 <video
                   v-if="output.localUrl"
                   :src="resolveMediaUrl(output.localUrl)"
                   controls
                   playsinline
                 />
+                <button
+                  v-if="output.localUrl && !hasAsset(resolveMediaUrl(output.localUrl))"
+                  class="collect-btn"
+                  @click="collectAsset(output.localUrl, 'video')"
+                  title="收入囊中"
+                >🎒 收入囊中</button>
+                <span v-else-if="output.localUrl && hasAsset(resolveMediaUrl(output.localUrl))" class="collect-done">✅ 已收</span>
                 <div class="video-actions">
                   <a v-if="output.localUrl" class="btn btn-secondary btn-sm" :href="resolveMediaUrl(output.localUrl)" target="_blank" rel="noreferrer">
                     開啟
@@ -511,11 +545,17 @@
         </div>
       </div>
     </section>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import NanoImageTab from '../components/NanoImageTab.vue'
+import { useAssetLibrary } from '../composables/useAssetLibrary'
+
+const activeTab = ref<'video' | 'image'>('video')
+const nanoTabRef = ref<InstanceType<typeof NanoImageTab> | null>(null)
 import { API_BASE_URL, API_ENDPOINTS } from '../api/config'
 import {
   createVeoJob,
@@ -822,8 +862,71 @@ function formatDate(value: string) {
   })
 }
 
+const { addAsset, hasAsset } = useAssetLibrary()
+
 function resolveMediaUrl(path: string) {
   return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+}
+
+function collectAsset(url: string, type: 'image' | 'video') {
+  const resolved = resolveMediaUrl(url)
+  addAsset({ type, url: resolved, mimeType: type === 'video' ? 'video/mp4' : 'image/jpeg', label: 'AI Studio' })
+}
+
+async function urlToAsset(url: string, mime: string) {
+  const resp = await fetch(url)
+  const blob = await resp.blob()
+  const base64Data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+  return {
+    base64Data,
+    mimeType: mime || blob.type || 'image/png',
+    fileName: url.split('/').pop() || 'dropped-image',
+    previewUrl: base64Data,
+  }
+}
+
+async function onStartImageDrop(e: DragEvent) {
+  e.preventDefault()
+  const url = e.dataTransfer?.getData('application/x-asset-url')
+  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
+  if (!url) return
+  form.image = await urlToAsset(url, mime)
+  form.sourceVideoRef = null
+}
+
+async function onEndImageDrop(e: DragEvent) {
+  e.preventDefault()
+  const url = e.dataTransfer?.getData('application/x-asset-url')
+  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
+  if (!url) return
+  form.lastFrame = await urlToAsset(url, mime)
+}
+
+async function onVideoDrop(e: DragEvent) {
+  e.preventDefault()
+  const url = e.dataTransfer?.getData('application/x-asset-url')
+  const type = e.dataTransfer?.getData('application/x-asset-type')
+  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'video/mp4'
+  if (!url || type !== 'video') return
+  form.video = await urlToAsset(url, mime)
+}
+
+async function onRefSlotDrop(e: DragEvent, slotIndex: number) {
+  e.preventDefault()
+  const url = e.dataTransfer?.getData('application/x-asset-url')
+  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
+  if (!url || form.referenceImages.length >= 4) return
+  const asset = await urlToAsset(url, mime)
+  form.referenceImages.push({
+    image: asset,
+    referenceType: 'STYLE',
+    description: '',
+  })
 }
 
 function resetMediaState() {
@@ -1084,6 +1187,8 @@ async function loadAll() {
     } else {
       stopPolling()
     }
+    // Also reload nano tab if visible
+    nanoTabRef.value?.loadJobs()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   }
@@ -1147,6 +1252,118 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* Shared styles that also apply to child components (NanoImageTab) */
+:deep(.veo-hero) {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(6, 182, 212, 0.22), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.26), transparent 30%),
+    linear-gradient(135deg, rgba(16, 24, 40, 0.96), rgba(13, 13, 20, 0.98));
+}
+:deep(.veo-hero-copy) { padding: 28px; }
+:deep(.veo-kicker) {
+  display: inline-block; font-size: 11px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--accent-cyan); margin-bottom: 12px;
+}
+:deep(.veo-hero-copy h1) { font-size: 30px; line-height: 1.08; max-width: 680px; margin-bottom: 12px; }
+:deep(.veo-hero-copy p) { color: var(--text-secondary); max-width: 640px; }
+:deep(.veo-hero-stats) { display: grid; grid-template-columns: repeat(3, 1fr); border-left: 1px solid var(--border); }
+:deep(.veo-stat) { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 24px; }
+:deep(.veo-stat strong) { font-size: 32px; }
+:deep(.veo-stat span) { color: var(--text-secondary); font-size: 12px; }
+:deep(.veo-grid) { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr); gap: 16px; }
+:deep(.veo-side-column) { display: flex; flex-direction: column; gap: 16px; }
+:deep(.optimizer-card) { background: radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 40%), var(--bg-card); }
+:deep(.optimizer-mode-strip) { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+:deep(.opt-mode-pill) { display: flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; transition: all 0.2s; }
+:deep(.opt-mode-pill:hover) { border-color: var(--accent-purple); color: var(--text-primary); }
+:deep(.opt-mode-pill.active) { background: rgba(124,58,237,0.2); border-color: var(--accent-purple); color: var(--text-primary); }
+:deep(.optimizer-input-row) { display: flex; gap: 10px; align-items: flex-start; }
+:deep(.optimizer-textarea) { flex: 1; min-height: 64px; max-height: 120px; resize: vertical; }
+:deep(.optimizer-btn) { white-space: nowrap; min-width: 80px; align-self: stretch; }
+:deep(.optimizer-status) { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.03); }
+:deep(.optimizer-step) { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); opacity: 0.4; transition: opacity 0.3s; }
+:deep(.optimizer-step.active) { opacity: 1; color: var(--accent-cyan); }
+:deep(.step-dot) { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); flex-shrink: 0; }
+:deep(.optimizer-step.active .step-dot) { background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); animation: pulse-dot 1.2s ease-in-out infinite; }
+:deep(.optimizer-result) { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+:deep(.optimizer-sections) { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+:deep(.optimizer-sections-label) { font-size: 11px; color: var(--text-secondary); margin-right: 4px; }
+:deep(.section-tag) { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(124, 58, 237, 0.15); color: var(--accent-purple); border: 1px solid rgba(124, 58, 237, 0.25); }
+:deep(.optimizer-table) { width: 100%; border-collapse: collapse; font-size: 13px; }
+:deep(.optimizer-table th) { text-align: left; font-size: 11px; font-weight: 500; color: var(--text-secondary); padding: 6px 10px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+:deep(.optimizer-table td) { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+:deep(.comp-label) { white-space: nowrap; font-weight: 500; color: var(--text-secondary); width: 120px; }
+:deep(.comp-value) { color: var(--text-primary); line-height: 1.5; }
+:deep(.neg-row .comp-label) { color: #fda4af; }
+:deep(.neg-row .comp-value) { color: #fda4af; opacity: 0.8; }
+:deep(.optimizer-full-prompt) { border: 1px solid var(--border); border-radius: var(--radius-md); background: rgba(255,255,255,0.02); padding: 12px; }
+:deep(.full-prompt-header) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+:deep(.full-prompt-actions) { display: flex; gap: 6px; }
+:deep(.full-prompt-text) { font-size: 13px; line-height: 1.7; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+:deep(.veo-form) { display: flex; flex-direction: column; gap: 16px; }
+:deep(.veo-params-grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+:deep(.veo-params-grid .form-group) { gap: 4px; }
+:deep(.mode-strip) { display: flex; flex-wrap: wrap; gap: 8px; }
+:deep(.mode-pill) { border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: var(--text-secondary); border-radius: 999px; padding: 10px 14px; cursor: pointer; transition: var(--transition); }
+:deep(.mode-pill.active), :deep(.mode-pill:hover) { color: var(--text-primary); border-color: rgba(6, 182, 212, 0.35); background: rgba(6, 182, 212, 0.14); }
+:deep(.veo-textarea) { min-height: 124px; }
+:deep(.asset-block) { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; background: rgba(255,255,255,0.02); }
+:deep(.asset-head) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 500; }
+:deep(.asset-preview) { margin-top: 8px; border-radius: var(--radius-sm); overflow: hidden; }
+:deep(.asset-preview img) { max-width: 100%; max-height: 300px; object-fit: contain; }
+:deep(.submit-row) { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+:deep(.status-stack) { display: flex; flex-direction: column; gap: 10px; }
+:deep(.status-card) { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+:deep(.status-card-head) { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+:deep(.status-prompt) { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+:deep(.progress-shell) { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; }
+:deep(.progress-bar) { height: 100%; border-radius: 2px; background: var(--accent-purple); transition: width 0.6s; }
+:deep(.history-grid) { display: flex; flex-direction: column; gap: 14px; }
+:deep(.history-card) { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; }
+:deep(.history-head) { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+:deep(.history-actions) { display: flex; gap: 6px; align-items: center; }
+:deep(.history-prompt) { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+:deep(.video-actions) { display: flex; gap: 6px; padding: 8px; }
+:deep(.ref-rule-hint) { font-size: 11px; color: var(--text-secondary); }
+</style>
+
+<style scoped>
+.studio-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 4px;
+  width: fit-content;
+}
+
+.studio-tab {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--c-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.studio-tab:hover {
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+
+.studio-tab.active {
+  background: var(--c-accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+}
+
 .veo-page {
   display: flex;
   flex-direction: column;
@@ -1836,6 +2053,50 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: #000;
   margin-bottom: 10px;
+}
+
+/* ── Collect Button ── */
+.media-card-wrap {
+  position: relative;
+}
+.collect-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.media-card-wrap:hover .collect-btn {
+  opacity: 1;
+}
+.collect-btn:hover {
+  background: var(--c-primary, #7c3aed);
+  border-color: var(--c-primary, #7c3aed);
+}
+.collect-done {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 11px;
+  color: var(--c-text-muted, #888);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 3px 8px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.media-card-wrap:hover .collect-done {
+  opacity: 1;
 }
 
 .extend-choice {

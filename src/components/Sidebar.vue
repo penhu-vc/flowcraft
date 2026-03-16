@@ -65,7 +65,7 @@ function toggle() {
 
 const navItems = [
   { path: '/dashboard', icon: '🏠', label: '工作流' },
-  { path: '/veo', icon: '🎬', label: 'Veo Studio', badge: 'NEW' },
+  { path: '/veo', icon: '🎬', label: 'AI Studio', badge: 'NEW' },
   { path: '/collections', icon: '📚', label: '資料庫' },
   { path: '/monitor',   icon: '📡', label: '監控面板' },
   { path: '/nodes',     icon: '🧩', label: '節點目錄' },

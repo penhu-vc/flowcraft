@@ -46,6 +46,15 @@ server/data/api-keys.json
 server/data/gemini-settings.json
 server/data/youtube-monitor-state.json
 server/data/*.lock
+server/data/generated/
+server/data/*.json
+
+# Temp scripts
+check-*.mjs
+screenshot*.mjs
+
+# Logs
+.logs/
 
 # NotebookLM session storage
 server/sessions/*.json
