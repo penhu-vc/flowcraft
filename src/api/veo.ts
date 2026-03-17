@@ -13,6 +13,19 @@ export interface VeoReferenceAsset extends VeoInlineAsset {
   referenceType: 'ASSET' | 'STYLE'
 }
 
+export interface VeoUiStateSnapshot {
+  optimizerMode?: VeoSourceMode
+  optimizerInput?: string
+  optimizeResult?: {
+    components: Record<string, string>
+    fullPrompt: string
+    negativePrompt: string
+    sections: string[]
+    sectionLabels: string[]
+  } | null
+  refDescriptions?: string[]
+}
+
 export interface VeoGenerationPayload {
   sourceMode: VeoSourceMode
   prompt?: string
@@ -34,6 +47,7 @@ export interface VeoGenerationPayload {
   referenceImages?: VeoReferenceAsset[]
   video?: VeoInlineAsset | null
   sourceVideoRef?: { jobId: string; index: number } | null
+  uiState?: VeoUiStateSnapshot
 }
 
 export interface VeoOutput {
@@ -58,6 +72,7 @@ export interface VeoJob {
   progress?: number
   error?: string
   outputs: VeoOutput[]
+  requestSnapshot?: VeoGenerationPayload
 }
 
 async function parse<T>(res: Response): Promise<T> {

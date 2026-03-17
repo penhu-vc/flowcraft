@@ -20,6 +20,14 @@ export interface NanoInlineAsset {
   base64Data: string
   mimeType: string
   fileName?: string
+  previewUrl?: string
+}
+
+interface NanoUiStateSnapshot {
+  optimizerMode?: SourceMode
+  optimizerInput?: string
+  optimizeResult?: Record<string, unknown> | null
+  refDescriptions?: string[]
 }
 
 export interface NanoGenerationRequest {
@@ -33,6 +41,7 @@ export interface NanoGenerationRequest {
   image?: NanoInlineAsset | null
   maskImage?: NanoInlineAsset | null
   referenceImages?: NanoInlineAsset[]
+  uiState?: NanoUiStateSnapshot
 }
 
 interface StoredImage {
@@ -51,6 +60,11 @@ export interface NanoJobRecord {
   prompt: string
   error?: string
   outputs: StoredImage[]
+  requestSnapshot?: NanoGenerationRequest
+}
+
+function cloneRequestSnapshot(payload: NanoGenerationRequest): NanoGenerationRequest {
+  return JSON.parse(JSON.stringify(payload)) as NanoGenerationRequest
 }
 
 // Multi-turn chat session tracking
@@ -228,6 +242,11 @@ export async function createNanoJob(payload: NanoGenerationRequest): Promise<Nan
     sourceMode: payload.sourceMode,
     prompt: payload.prompt.trim(),
     outputs: [],
+    requestSnapshot: cloneRequestSnapshot({
+      ...payload,
+      prompt: payload.prompt.trim(),
+      negativePrompt: payload.negativePrompt?.trim() || undefined,
+    }),
   }
   jobs.set(job.id, job)
   persistJobs()

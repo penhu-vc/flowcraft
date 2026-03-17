@@ -9,6 +9,19 @@ export interface NanoInlineAsset {
   previewUrl?: string
 }
 
+export interface NanoUiStateSnapshot {
+  optimizerMode?: NanoSourceMode
+  optimizerInput?: string
+  optimizeResult?: {
+    components: Record<string, string>
+    fullPrompt: string
+    negativeHints: string
+    sections: string[]
+    sectionLabels: string[]
+  } | null
+  refDescriptions?: string[]
+}
+
 export interface NanoGenerationPayload {
   sourceMode: NanoSourceMode
   prompt: string
@@ -20,6 +33,7 @@ export interface NanoGenerationPayload {
   image?: NanoInlineAsset | null
   maskImage?: NanoInlineAsset | null
   referenceImages?: NanoInlineAsset[]
+  uiState?: NanoUiStateSnapshot
 }
 
 export interface NanoOutput {
@@ -38,6 +52,7 @@ export interface NanoJob {
   prompt: string
   error?: string
   outputs: NanoOutput[]
+  requestSnapshot?: NanoGenerationPayload
 }
 
 async function parse<T>(res: Response): Promise<T> {

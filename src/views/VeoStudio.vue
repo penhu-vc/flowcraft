@@ -360,11 +360,20 @@
                     </div>
                   </template>
                   <template v-else>
-                    <label v-if="canAddRef" class="ref-slot-empty" @dragover.prevent @drop.prevent="onRefSlotDrop($event, slot - 1)">
+                    <div
+                      v-if="canAddRef"
+                      class="ref-slot-empty"
+                      tabindex="0"
+                      @click.stop="triggerRefSlotUpload(slot - 1)"
+                      @keydown.enter.prevent="triggerRefSlotUpload(slot - 1)"
+                      @keydown.space.prevent="triggerRefSlotUpload(slot - 1)"
+                      @dragover.prevent
+                      @drop.prevent="onRefSlotDrop($event, slot - 1)"
+                    >
                       <span class="ref-slot-plus">+</span>
                       <span class="ref-slot-label">上傳圖片</span>
-                      <input type="file" accept="image/*" hidden @change="onRefSlotUpload($event, slot - 1)" />
-                    </label>
+                      <input :ref="(el) => setRefInputRef(el, slot - 1)" type="file" accept="image/*" hidden @change="onRefSlotUpload($event, slot - 1)" />
+                    </div>
                     <div v-else class="ref-slot-empty ref-slot-locked">
                       <span class="ref-slot-label">已滿</span>
                     </div>
@@ -510,6 +519,7 @@
                 <span class="badge" :class="job.status === 'completed' ? 'badge-active' : job.status === 'failed' ? 'badge-trigger' : 'badge-ai'">
                   {{ job.status }}
                 </span>
+                <button v-if="job.requestSnapshot" class="btn btn-secondary btn-sm" @click="restoreJob(job)">恢復設定</button>
                 <button class="btn btn-danger btn-sm" @click="removeJob(job.id)">刪除</button>
               </div>
             </div>
@@ -568,6 +578,7 @@ import {
   type VeoJob,
   type VeoReferenceAsset,
   type VeoSourceMode,
+  type VeoUiStateSnapshot,
 } from '../api/veo'
 
 // ── Optimizer State ──
@@ -890,37 +901,64 @@ async function urlToAsset(url: string, mime: string) {
   }
 }
 
+function getDroppedAssetData(e: DragEvent): { url: string; mime: string; type: string } | null {
+  const dt = e.dataTransfer
+  if (!dt) return null
+
+  const raw = dt.getData('application/x-flowcraft-asset')
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as { url?: string; mimeType?: string; type?: string }
+      if (parsed.url) {
+        return {
+          url: parsed.url,
+          mime: parsed.mimeType || 'image/jpeg',
+          type: parsed.type || '',
+        }
+      }
+    } catch {}
+  }
+
+  const url = dt.getData('application/x-asset-url') || dt.getData('text/uri-list') || dt.getData('text/plain')
+  if (!url) return null
+
+  return {
+    url,
+    mime: dt.getData('application/x-asset-mime') || 'image/jpeg',
+    type: dt.getData('application/x-asset-type') || '',
+  }
+}
+
 async function onStartImageDrop(e: DragEvent) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url) return
+  const { url, mime } = dropped
   form.image = await urlToAsset(url, mime)
   form.sourceVideoRef = null
 }
 
 async function onEndImageDrop(e: DragEvent) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url) return
+  const { url, mime } = dropped
   form.lastFrame = await urlToAsset(url, mime)
 }
 
 async function onVideoDrop(e: DragEvent) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const type = e.dataTransfer?.getData('application/x-asset-type')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'video/mp4'
-  if (!url || type !== 'video') return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url || dropped.type !== 'video') return
+  const { url, mime } = dropped
   form.video = await urlToAsset(url, mime)
 }
 
 async function onRefSlotDrop(e: DragEvent, slotIndex: number) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url || form.referenceImages.length >= 4) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url || form.referenceImages.length >= 4) return
+  const { url, mime } = dropped
   const asset = await urlToAsset(url, mime)
   form.referenceImages.push({
     image: asset,
@@ -1033,6 +1071,7 @@ function copyStartToEnd() {
 
 // ── Reference Slots (4 fixed) ──
 const refDescriptions = ref<string[]>(['', '', '', ''])
+const refInputRefs = ref<(HTMLInputElement | null)[]>([])
 
 const hasAnyRefDescription = computed(() =>
   refDescriptions.value.some((d, i) => d.trim() && refSlots.value[i])
@@ -1088,15 +1127,24 @@ function onRefTypeChange(index: number, newType: 'ASSET' | 'STYLE') {
   form.referenceImages[index].referenceType = newType
 }
 
+function setRefInputRef(el: Element | null, index: number) {
+  refInputRefs.value[index] = el as HTMLInputElement | null
+}
+
+function triggerRefSlotUpload(index: number) {
+  refInputRefs.value[index]?.click()
+}
+
 async function onRefSlotUpload(event: Event, _slotIndex: number) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
   const asset = await fileToAsset(file)
   // Default to Asset, unless already 3 assets then Style
   const defaultType = assetCount.value < 3 ? 'ASSET' : 'STYLE'
   form.referenceImages.push({ ...asset, referenceType: defaultType } as VeoReferenceAsset)
   // Reset input so same file can be re-selected
-  ;(event.target as HTMLInputElement).value = ''
+  input.value = ''
 }
 
 async function onVideoUpload(event: Event) {
@@ -1129,6 +1177,12 @@ function removeReference(index: number) {
 }
 
 function buildPayload(): VeoGenerationPayload {
+  const uiState: VeoUiStateSnapshot = {
+    optimizerMode: optimizerMode.value,
+    optimizerInput: optimizerInput.value,
+    optimizeResult: optimizeResult.value ? { ...optimizeResult.value } : null,
+    refDescriptions: [...refDescriptions.value],
+  }
   return {
     sourceMode: form.sourceMode,
     prompt: form.prompt.trim() || undefined,
@@ -1155,6 +1209,7 @@ function buildPayload(): VeoGenerationPayload {
     })),
     video: form.video,
     sourceVideoRef: form.sourceVideoRef,
+    uiState,
   }
 }
 
@@ -1229,6 +1284,50 @@ function stopPolling() {
 async function removeJob(jobId: string) {
   await deleteVeoJob(jobId)
   jobs.value = jobs.value.filter((job) => job.id !== jobId)
+}
+
+function normalizeAsset(asset?: VeoInlineAsset | null): VeoInlineAsset | null {
+  if (!asset?.base64Data) return null
+  return {
+    ...asset,
+    previewUrl: asset.previewUrl || asset.base64Data,
+  }
+}
+
+function restoreJob(job: VeoJob) {
+  const snapshot = job.requestSnapshot
+  if (!snapshot) return
+
+  switchMode(snapshot.sourceMode)
+  form.prompt = snapshot.prompt || ''
+  form.negativePrompt = snapshot.negativePrompt || ''
+  form.model = snapshot.model || 'veo-3.1-generate-preview'
+  form.aspectRatio = snapshot.aspectRatio || '16:9'
+  form.resolution = snapshot.resolution || '720p'
+  form.durationSeconds = snapshot.durationSeconds || 4
+  form.numberOfVideos = snapshot.numberOfVideos || 1
+  form.seed = snapshot.seed ?? null
+  form.enhancePrompt = snapshot.enhancePrompt ?? true
+  form.generateAudio = snapshot.generateAudio ?? false
+  form.personGeneration = snapshot.personGeneration || 'allow_adult'
+  form.fps = snapshot.fps ?? null
+  form.outputGcsUri = snapshot.outputGcsUri || ''
+  lossless.value = snapshot.compressionQuality === 'LOSSLESS'
+  form.image = normalizeAsset(snapshot.image)
+  form.lastFrame = normalizeAsset(snapshot.lastFrame)
+  form.referenceImages = (snapshot.referenceImages || []).map((asset) => normalizeAsset(asset)).filter(Boolean) as VeoReferenceAsset[]
+  form.video = normalizeAsset(snapshot.video)
+  form.sourceVideoRef = snapshot.sourceVideoRef || null
+  selectedSourceVideo.value = form.sourceVideoRef ? `${form.sourceVideoRef.jobId}:${form.sourceVideoRef.index}` : ''
+
+  optimizerMode.value = snapshot.uiState?.optimizerMode || snapshot.sourceMode
+  optimizerInput.value = snapshot.uiState?.optimizerInput || ''
+  optimizeResult.value = snapshot.uiState?.optimizeResult ? { ...snapshot.uiState.optimizeResult } as any : null
+  refDescriptions.value = snapshot.uiState?.refDescriptions?.slice(0, 4) || ['', '', '', '']
+  while (refDescriptions.value.length < 4) refDescriptions.value.push('')
+
+  errorMessage.value = ''
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function useForExtend(jobId: string, index: number, localUrl?: string) {

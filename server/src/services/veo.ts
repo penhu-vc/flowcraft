@@ -12,6 +12,7 @@ export interface InlineAsset {
   base64Data: string
   mimeType: string
   fileName?: string
+  previewUrl?: string
 }
 
 export interface InlineReferenceImage extends InlineAsset {
@@ -39,6 +40,12 @@ export interface VeoGenerationRequest {
   referenceImages?: InlineReferenceImage[]
   video?: InlineAsset | null
   sourceVideoRef?: { jobId: string; index: number } | null
+  uiState?: {
+    optimizerMode?: SourceMode
+    optimizerInput?: string
+    optimizeResult?: Record<string, unknown> | null
+    refDescriptions?: string[]
+  }
 }
 
 interface StoredVideo {
@@ -63,6 +70,11 @@ export interface VeoJobRecord {
   progress?: number
   error?: string
   outputs: StoredVideo[]
+  requestSnapshot?: VeoGenerationRequest
+}
+
+function cloneRequestSnapshot(payload: VeoGenerationRequest): VeoGenerationRequest {
+  return JSON.parse(JSON.stringify(payload)) as VeoGenerationRequest
 }
 
 const DATA_DIR = join(__dirname, '../../data')
@@ -362,6 +374,12 @@ export async function createVeoJob(payload: VeoGenerationRequest) {
     metadata: operation.metadata,
     progress: extractProgress(operation.metadata),
     outputs: [],
+    requestSnapshot: cloneRequestSnapshot({
+      ...payload,
+      prompt: payload.prompt?.trim() || '',
+      negativePrompt: payload.negativePrompt?.trim() || undefined,
+      outputGcsUri: payload.outputGcsUri?.trim() || undefined,
+    }),
   }
 
   if (!job.operationName) {

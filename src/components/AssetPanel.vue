@@ -28,8 +28,8 @@
           @dragstart="onDragStart($event, asset)"
           :title="asset.label"
         >
-          <img v-if="asset.type === 'image'" :src="asset.url" alt="" />
-          <video v-else :src="asset.url" muted />
+          <img v-if="asset.type === 'image'" :src="asset.url" alt="" draggable="false" />
+          <video v-else :src="asset.url" muted draggable="false" />
           <span class="asset-type-badge">{{ asset.type === 'image' ? '🖼️' : '🎬' }}</span>
           <button class="asset-remove-btn" @click.stop="removeAsset(asset.id)" title="移除">×</button>
         </div>
@@ -50,9 +50,17 @@ const isOpen = ref(false)
 
 function onDragStart(e: DragEvent, asset: AssetItem) {
   if (!e.dataTransfer) return
+  const payload = JSON.stringify({
+    url: asset.url,
+    type: asset.type,
+    mimeType: asset.mimeType,
+  })
+  e.dataTransfer.setData('application/x-flowcraft-asset', payload)
   e.dataTransfer.setData('application/x-asset-url', asset.url)
   e.dataTransfer.setData('application/x-asset-type', asset.type)
   e.dataTransfer.setData('application/x-asset-mime', asset.mimeType)
+  e.dataTransfer.setData('text/plain', asset.url)
+  e.dataTransfer.setData('text/uri-list', asset.url)
   e.dataTransfer.effectAllowed = 'copy'
 }
 

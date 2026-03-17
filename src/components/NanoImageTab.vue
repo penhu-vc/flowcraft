@@ -20,16 +20,35 @@
           </button>
         </div>
 
+        <!-- 匯入上次資料提示 -->
+        <div v-if="matchedHistory && optimizerMode === 'reference'" class="history-import-bar">
+          <span class="history-import-info">📋 偵測到此圖片有上次的生成紀錄</span>
+          <button class="btn btn-primary btn-sm" @click="importHistory">
+            直接匯入上次資料
+          </button>
+          <button class="btn btn-secondary btn-sm" @click="matchedHistory = null">
+            略過
+          </button>
+        </div>
+
         <!-- 參考圖模式：最多 5 張圖片，各自設定描述面向 -->
         <div v-if="optimizerMode === 'reference'" class="ref-describe-block">
           <div class="ref-slots-grid">
-            <div v-for="(slot, idx) in describeSlots" :key="idx" class="ref-slot" :class="{ active: activeSlotIdx === idx }" @click="activeSlotIdx = idx">
-              <div v-if="!slot.preview" class="ref-slot-empty" @click.stop="triggerSlotUpload(idx)" @dragover.prevent @drop.stop="onSlotDropAsset($event, idx)">
+            <div v-for="(slot, idx) in describeSlots" :key="idx" class="ref-slot media-card-wrap" :class="{ active: activeSlotIdx === idx }" @click="activeSlotIdx = idx">
+              <div v-if="!slot.preview" class="ref-slot-empty" tabindex="0" @click.stop="triggerSlotUpload(idx)" @dragover.prevent @drop.stop="onSlotDropAsset($event, idx)" @paste.stop="onSlotPaste($event, idx)" @mouseenter="($event.target as HTMLElement).focus()"  @mouseleave="($event.target as HTMLElement).blur()">
                 <span class="ref-slot-plus">+</span>
+                <span class="ref-slot-paste-hint">上傳 / 貼上</span>
                 <input :ref="el => setSlotInputRef(el, idx)" type="file" accept="image/*" hidden @change="onSlotUpload($event, idx)" />
               </div>
               <div v-else class="ref-slot-filled">
-                <img :src="slot.preview" :alt="'參考圖 ' + (idx + 1)" class="ref-slot-img" />
+                <img :src="slot.preview" :alt="'參考圖 ' + (idx + 1)" class="ref-slot-img" @click.stop="openLightboxDirect(slot.preview)" title="點擊放大" style="cursor: zoom-in;" />
+                <button
+                  v-if="!hasAsset(slot.preview)"
+                  class="collect-btn"
+                  @click.stop="collectAssetDirect(slot.preview)"
+                  title="收入囊中"
+                >🎒 收入囊中</button>
+                <span v-else class="collect-done">✅ 已收</span>
                 <button class="ref-slot-clear" @click.stop="clearSlot(idx)">×</button>
                 <span v-if="slot.result" class="ref-slot-done">✓</span>
               </div>
@@ -269,7 +288,7 @@
                   ✨ 一鍵去除
                 </button>
               </div>
-              <div class="mask-canvas-wrap" ref="maskWrapRef">
+              <div class="mask-canvas-wrap media-card-wrap" ref="maskWrapRef">
                 <img
                   ref="maskImgRef"
                   :src="imagePreview"
@@ -277,6 +296,13 @@
                   class="mask-base-img"
                   @load="initMaskCanvas"
                 />
+                <button
+                  v-if="imagePreview && !hasAsset(imagePreview)"
+                  class="collect-btn"
+                  @click.stop="collectAssetDirect(imagePreview)"
+                  title="收入囊中"
+                >🎒 收入囊中</button>
+                <span v-else-if="imagePreview && hasAsset(imagePreview)" class="collect-done">✅ 已收</span>
                 <canvas
                   ref="maskCanvasRef"
                   class="mask-overlay"
@@ -322,11 +348,18 @@
                 class="ref-slot-wrapper"
               >
                 <div
-                  class="ref-slot"
+                  class="ref-slot media-card-wrap"
                   :class="{ filled: !!refSlots[slot - 1], disabled: !refSlots[slot - 1] && form.referenceImages.length >= 14 }"
                 >
                   <template v-if="refSlots[slot - 1]">
-                    <img :src="refSlots[slot - 1]!.previewUrl" alt="Reference" />
+                    <img :src="refSlots[slot - 1]!.previewUrl" alt="Reference" @click="openLightboxDirect(refSlots[slot - 1]!.previewUrl)" style="cursor: zoom-in;" />
+                    <button
+                      v-if="!hasAsset(refSlots[slot - 1]!.previewUrl)"
+                      class="collect-btn"
+                      @click.stop="collectAssetDirect(refSlots[slot - 1]!.previewUrl)"
+                      title="收入囊中"
+                    >🎒 收入囊中</button>
+                    <span v-else class="collect-done">✅ 已收</span>
                     <div class="ref-slot-controls">
                       <select
                         :value="refSlots[slot - 1]!.referenceType"
@@ -352,9 +385,9 @@
                     </div>
                   </template>
                   <template v-else>
-                    <label v-if="form.referenceImages.length < 14" class="ref-slot-empty" @dragover.prevent @drop.prevent="onRefDropAsset($event, slot - 1)">
+                    <label v-if="form.referenceImages.length < 14" class="ref-slot-empty" tabindex="0" @dragover.prevent @drop.prevent="onRefDropAsset($event, slot - 1)" @paste.prevent="onRefPaste($event, slot - 1)" @mouseenter="($event.target as HTMLElement).focus()" @mouseleave="($event.target as HTMLElement).blur()">
                       <span class="ref-slot-plus">+</span>
-                      <span class="ref-slot-label">上傳圖片</span>
+                      <span class="ref-slot-label">上傳 / 貼上</span>
                       <input type="file" accept="image/*" hidden @change="onRefSlotUpload($event, slot - 1)" />
                     </label>
                     <div v-else class="ref-slot-empty ref-slot-locked">
@@ -449,6 +482,7 @@
                 <span class="badge" :class="job.status === 'completed' ? 'badge-active' : job.status === 'failed' ? 'badge-trigger' : 'badge-ai'">
                   {{ job.status }}
                 </span>
+                <button v-if="job.requestSnapshot" class="btn btn-secondary btn-sm" @click="restoreJob(job)">恢復設定</button>
                 <button class="btn btn-danger btn-sm" @click="removeJob(job.id)">刪除</button>
               </div>
             </div>
@@ -491,11 +525,19 @@
         </div>
       </div>
     </section>
+
+    <!-- Lightbox -->
+    <Teleport to="body">
+      <div v-if="lightboxUrl" class="lightbox-overlay" @click.self="closeLightbox" @keydown="onLightboxKeydown" tabindex="0" ref="lightboxRef">
+        <button class="lightbox-close" @click="closeLightbox">&times;</button>
+        <img :src="lightboxUrl" class="lightbox-img" />
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue'
 import { useAssetLibrary } from '../composables/useAssetLibrary'
 import { API_BASE_URL, API_ENDPOINTS } from '../api/config'
 import {
@@ -507,6 +549,7 @@ import {
   type NanoInlineAsset,
   type NanoJob,
   type NanoSourceMode,
+  type NanoUiStateSnapshot,
 } from '../api/nano'
 
 const props = defineProps<{
@@ -598,6 +641,115 @@ function createEmptySlot(): RefSlot {
   }
 }
 
+// ── Image History (localStorage persistence) ──
+const HISTORY_STORAGE_KEY = 'nano-image-history'
+const MAX_HISTORY = 50
+
+interface ImageHistorySlot {
+  fingerprint: string
+  aspects: { key: string; checked: boolean }[]
+  result: Record<string, string> | null
+}
+
+interface ImageHistory {
+  /** First 64 chars of base64 as fingerprint (from first slot) */
+  fingerprint: string
+  slots: ImageHistorySlot[]
+  optimizerInput: string
+  optimizeResult: {
+    components: Record<string, string>
+    fullPrompt: string
+    negativeHints: string
+    sections: string[]
+    sectionLabels: string[]
+  } | null
+  timestamp: number
+}
+
+function getFingerprint(base64: string): string {
+  // Use first 64 chars of the base64 data as a simple fingerprint
+  return base64.slice(0, 64)
+}
+
+function loadHistory(): ImageHistory[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+function saveHistory(histories: ImageHistory[]) {
+  // Keep only latest MAX_HISTORY
+  const trimmed = histories.slice(0, MAX_HISTORY)
+  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed))
+}
+
+function findHistoryBySlots(slots: RefSlot[]): ImageHistory | null {
+  const histories = loadHistory()
+  const fingerprints = slots.filter(s => s.base64).map(s => getFingerprint(s.base64))
+  if (fingerprints.length === 0) return null
+  // Match if any slot fingerprint matches any history slot fingerprint
+  for (const h of histories) {
+    for (const fp of fingerprints) {
+      if (h.slots.some(s => s.fingerprint === fp)) return h
+    }
+  }
+  return null
+}
+
+function saveCurrentToHistory() {
+  const filledSlots = describeSlots.filter(s => s.base64)
+  if (filledSlots.length === 0) return
+  const entry: ImageHistory = {
+    fingerprint: getFingerprint(filledSlots[0].base64),
+    slots: describeSlots.map(s => ({
+      fingerprint: s.base64 ? getFingerprint(s.base64) : '',
+      aspects: s.aspects.map(a => ({ key: a.key, checked: a.checked })),
+      result: s.result,
+    })),
+    optimizerInput: optimizerInput.value,
+    optimizeResult: optimizeResult.value,
+    timestamp: Date.now(),
+  }
+  const histories = loadHistory()
+  // Remove existing entry with same fingerprint
+  const filtered = histories.filter(h => h.fingerprint !== entry.fingerprint)
+  filtered.unshift(entry)
+  saveHistory(filtered)
+}
+
+const matchedHistory: Ref<ImageHistory | null> = ref(null)
+
+function checkForHistory() {
+  matchedHistory.value = findHistoryBySlots(describeSlots)
+}
+
+function importHistory() {
+  const h = matchedHistory.value
+  if (!h) return
+  // Match current uploaded slots to saved slots by fingerprint
+  // Restore aspects checkboxes and AI describe results for matching slots
+  for (let idx = 0; idx < describeSlots.length; idx++) {
+    const current = describeSlots[idx]
+    if (!current.base64) continue
+    const currentFp = getFingerprint(current.base64)
+    const savedSlot = h.slots.find(s => s.fingerprint === currentFp)
+    if (savedSlot) {
+      current.result = savedSlot.result
+      for (const asp of current.aspects) {
+        const savedAsp = savedSlot.aspects.find(a => a.key === asp.key)
+        if (savedAsp) asp.checked = savedAsp.checked
+      }
+    }
+  }
+  // Restore optimizer state
+  optimizerInput.value = h.optimizerInput || ''
+  if (h.optimizeResult) {
+    optimizeResult.value = h.optimizeResult
+  }
+  matchedHistory.value = null
+}
+
 const describeSlots = reactive<RefSlot[]>([
   createEmptySlot(),
   createEmptySlot(),
@@ -650,6 +802,7 @@ function onSlotUpload(event: Event, idx: number) {
     describeSlots[idx].result = null
     activeSlotIdx.value = idx
     autoUncheckOccupied(idx)
+    checkForHistory()
   }
   reader.readAsDataURL(file)
   ;(event.target as HTMLInputElement).value = ''
@@ -658,6 +811,72 @@ function onSlotUpload(event: Event, idx: number) {
 function clearSlot(idx: number) {
   Object.assign(describeSlots[idx], createEmptySlot())
   rebuildRefDescription()
+}
+
+async function onSlotPaste(e: ClipboardEvent, idx: number) {
+  const result = await handlePasteData(e)
+  if (!result) return
+  describeSlots[idx].preview = result.dataUrl
+  describeSlots[idx].base64 = result.dataUrl.split(',')[1]
+  describeSlots[idx].mime = result.mime
+  describeSlots[idx].result = null
+  activeSlotIdx.value = idx
+  autoUncheckOccupied(idx)
+  checkForHistory()
+}
+
+async function onRefPaste(e: ClipboardEvent, _slotIndex: number) {
+  const result = await handlePasteData(e)
+  if (!result || form.referenceImages.length >= 14) return
+  ;(form.referenceImages as NanoRefAsset[]).push({
+    base64Data: result.dataUrl,
+    mimeType: result.mime,
+    previewUrl: result.dataUrl,
+    referenceType: 'subject_default',
+  })
+}
+
+async function handlePasteData(e: ClipboardEvent): Promise<{ dataUrl: string; mime: string } | null> {
+  const items = e.clipboardData?.items
+  if (!items) return null
+
+  // Check for image in clipboard
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (!file) continue
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(file)
+      })
+      return { dataUrl, mime: file.type }
+    }
+  }
+
+  // Check for text (URL)
+  const text = e.clipboardData?.getData('text/plain')?.trim()
+  if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/'))) {
+    try {
+      if (text.startsWith('data:image/')) {
+        const mime = text.match(/^data:([^;]+);/)?.[1] || 'image/png'
+        return { dataUrl: text, mime }
+      }
+      const resp = await fetch(text)
+      const blob = await resp.blob()
+      if (!blob.type.startsWith('image/')) return null
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      return { dataUrl, mime: blob.type }
+    } catch {
+      return null
+    }
+  }
+
+  return null
 }
 
 async function describeAllSlots() {
@@ -682,6 +901,7 @@ async function describeAllSlots() {
       slot.result = data.description
     }))
     rebuildRefDescription()
+    saveCurrentToHistory()
   } catch (err) {
     optimizeError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -725,6 +945,10 @@ async function runOptimizer() {
       negativeHints: data.negativeHints,
       sections: data.sections,
       sectionLabels: data.sectionLabels,
+    }
+    // Save to history if in reference mode with filled slots
+    if (optimizerMode.value === 'reference') {
+      saveCurrentToHistory()
     }
   } catch (err) {
     optimizeError.value = err instanceof Error ? err.message : String(err)
@@ -783,6 +1007,7 @@ const activeJobs = computed(() => jobs.value.filter(j => j.status === 'running' 
 const completedJobs = computed(() => jobs.value.filter(j => j.status === 'completed'))
 const failedJobs = computed(() => jobs.value.filter(j => j.status === 'failed'))
 const imagePreview = computed(() => form.image?.previewUrl || '')
+const pendingRestoredMask = ref<string | null>(null)
 const canSubmit = computed(() => {
   if (!props.configured) return false
   if (!form.prompt.trim()) return false
@@ -940,6 +1165,17 @@ function initMaskCanvas() {
   const ctx = canvas.getContext('2d')!
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   maskHasPaint.value = false
+  if (pendingRestoredMask.value) {
+    const maskImage = new Image()
+    maskImage.onload = () => {
+      const drawCtx = canvas.getContext('2d')!
+      drawCtx.clearRect(0, 0, canvas.width, canvas.height)
+      drawCtx.drawImage(maskImage, 0, 0, canvas.width, canvas.height)
+      maskHasPaint.value = true
+      pendingRestoredMask.value = null
+    }
+    maskImage.src = pendingRestoredMask.value
+  }
 }
 
 function getMaskPos(e: PointerEvent) {
@@ -1127,11 +1363,39 @@ async function urlToAsset(url: string, mime: string): Promise<NanoInlineAsset> {
   }
 }
 
+function getDroppedAssetData(e: DragEvent): { url: string; mime: string; type: string } | null {
+  const dt = e.dataTransfer
+  if (!dt) return null
+
+  const raw = dt.getData('application/x-flowcraft-asset')
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as { url?: string; mimeType?: string; type?: string }
+      if (parsed.url) {
+        return {
+          url: parsed.url,
+          mime: parsed.mimeType || 'image/jpeg',
+          type: parsed.type || '',
+        }
+      }
+    } catch {}
+  }
+
+  const url = dt.getData('application/x-asset-url') || dt.getData('text/uri-list') || dt.getData('text/plain')
+  if (!url) return null
+
+  return {
+    url,
+    mime: dt.getData('application/x-asset-mime') || 'image/jpeg',
+    type: dt.getData('application/x-asset-type') || '',
+  }
+}
+
 async function onEditDropAsset(e: DragEvent) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url) return
+  const { url, mime } = dropped
   form.image = await urlToAsset(url, mime)
   maskHasPaint.value = false
   if (form.image?.previewUrl) {
@@ -1146,9 +1410,9 @@ async function onEditDropAsset(e: DragEvent) {
 
 async function onRefDropAsset(e: DragEvent, slotIndex: number) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url || form.referenceImages.length >= 14) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url || form.referenceImages.length >= 14) return
+  const { url, mime } = dropped
   const asset = await urlToAsset(url, mime)
   ;(form.referenceImages as NanoRefAsset[]).push({
     ...asset,
@@ -1158,16 +1422,17 @@ async function onRefDropAsset(e: DragEvent, slotIndex: number) {
 
 async function onSlotDropAsset(e: DragEvent, idx: number) {
   e.preventDefault()
-  const url = e.dataTransfer?.getData('application/x-asset-url')
-  const mime = e.dataTransfer?.getData('application/x-asset-mime') || 'image/jpeg'
-  if (!url) return
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url) return
+  const { url, mime } = dropped
   const asset = await urlToAsset(url, mime)
   describeSlots[idx].preview = asset.previewUrl
-  describeSlots[idx].base64 = asset.base64Data
+  describeSlots[idx].base64 = asset.base64Data.replace(/^data:[^;]+;base64,/, '')
   describeSlots[idx].mime = asset.mimeType
   describeSlots[idx].result = null
   activeSlotIdx.value = idx
   autoUncheckOccupied(idx)
+  checkForHistory()
 }
 
 function switchMode(mode: NanoSourceMode) {
@@ -1183,6 +1448,12 @@ async function submit() {
   errorMessage.value = ''
 
   try {
+    const uiState: NanoUiStateSnapshot = {
+      optimizerMode: optimizerMode.value,
+      optimizerInput: optimizerInput.value,
+      optimizeResult: optimizeResult.value ? { ...optimizeResult.value } : null,
+      refDescriptions: [...refDescriptions.value],
+    }
     const payload: NanoGenerationPayload = {
       sourceMode: form.sourceMode,
       prompt: form.prompt,
@@ -1197,6 +1468,7 @@ async function submit() {
         return maskData ? { base64Data: maskData, mimeType: 'image/png' } : undefined
       })() : undefined,
       referenceImages: form.sourceMode === 'reference' ? form.referenceImages : undefined,
+      uiState,
     }
 
     // Add placeholder job so 即時任務 shows progress
@@ -1232,6 +1504,10 @@ function collectAsset(url: string) {
   addAsset({ type: 'image', url: resolved, mimeType: 'image/jpeg', label: 'AI Studio' })
 }
 
+function collectAssetDirect(url: string) {
+  addAsset({ type: 'image', url, mimeType: 'image/jpeg', label: 'AI Studio' })
+}
+
 // ── Actions ──
 function resolveMediaUrl(path: string) {
   return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
@@ -1246,8 +1522,25 @@ function formatDate(value: string) {
   })
 }
 
+const lightboxUrl = ref<string | null>(null)
+const lightboxRef = ref<HTMLElement | null>(null)
+
 function openImage(localUrl: string) {
-  window.open(resolveMediaUrl(localUrl), '_blank')
+  lightboxUrl.value = resolveMediaUrl(localUrl)
+  nextTick(() => lightboxRef.value?.focus())
+}
+
+function openLightboxDirect(url: string) {
+  lightboxUrl.value = url
+  nextTick(() => lightboxRef.value?.focus())
+}
+
+function closeLightbox() {
+  lightboxUrl.value = null
+}
+
+function onLightboxKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeLightbox()
 }
 
 function useAsEditSource(localUrl: string) {
@@ -1257,6 +1550,46 @@ function useAsEditSource(localUrl: string) {
     mimeType: 'image/png',
     previewUrl: resolveMediaUrl(localUrl),
   }
+}
+
+function normalizeAsset(asset?: NanoInlineAsset | null): NanoInlineAsset | null {
+  if (!asset?.base64Data) return null
+  const previewUrl = asset.previewUrl || asset.base64Data
+  return {
+    ...asset,
+    previewUrl,
+  }
+}
+
+async function restoreJob(job: NanoJob) {
+  const snapshot = job.requestSnapshot
+  if (!snapshot) return
+
+  switchMode(snapshot.sourceMode)
+  form.prompt = snapshot.prompt || ''
+  form.negativePrompt = snapshot.negativePrompt || ''
+  form.aspectRatio = snapshot.aspectRatio || '1:1'
+  form.imageSize = snapshot.imageSize || '2K'
+  form.numberOfImages = snapshot.numberOfImages || 1
+  form.personGeneration = snapshot.personGeneration || 'allow_adult'
+  form.image = normalizeAsset(snapshot.image)
+  form.referenceImages = (snapshot.referenceImages || []).map((asset) => normalizeAsset(asset)).filter(Boolean) as NanoRefAsset[]
+
+  const uiState = snapshot.uiState
+  optimizerMode.value = uiState?.optimizerMode || snapshot.sourceMode
+  optimizerInput.value = uiState?.optimizerInput || ''
+  optimizeResult.value = uiState?.optimizeResult ? { ...uiState.optimizeResult } as any : null
+  refDescriptions.value = uiState?.refDescriptions?.slice(0, 14) || Array(14).fill('')
+  while (refDescriptions.value.length < 14) refDescriptions.value.push('')
+
+  pendingRestoredMask.value = snapshot.maskImage?.base64Data || null
+  if (!pendingRestoredMask.value) {
+    clearMask()
+  }
+
+  errorMessage.value = ''
+  await nextTick()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 async function removeJob(jobId: string) {
@@ -1312,6 +1645,26 @@ onBeforeUnmount(stopPolling)
   gap: 16px;
 }
 
+.history-import-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md, 8px);
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  animation: fadeIn 0.3s ease;
+}
+.history-import-info {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary, #fff);
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .nano-params-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1356,7 +1709,7 @@ onBeforeUnmount(stopPolling)
 .collect-btn {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1379,7 +1732,7 @@ onBeforeUnmount(stopPolling)
 .collect-done {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   font-size: 11px;
   color: var(--c-text-muted, #888);
   background: rgba(0, 0, 0, 0.5);
@@ -1431,10 +1784,10 @@ onBeforeUnmount(stopPolling)
   display: block;
 }
 
-/* Reference slots grid */
-.ref-slots-grid {
+/* Reference slots grid (generation form, 14 slots) */
+.asset-block .ref-slots-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 10px;
   margin-top: 8px;
 }
@@ -1443,13 +1796,15 @@ onBeforeUnmount(stopPolling)
   flex-direction: column;
   gap: 6px;
 }
-.ref-slot {
+.asset-block .ref-slot {
   border: 2px dashed var(--c-border);
   border-radius: 8px;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 1;
   overflow: hidden;
   position: relative;
   transition: border-color 0.2s;
+  width: auto;
+  height: auto;
 }
 .ref-slot.filled {
   border-style: solid;
@@ -1671,34 +2026,51 @@ onBeforeUnmount(stopPolling)
   margin-bottom: 8px;
 }
 .ref-slots-grid {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
 }
 .ref-slot {
-  width: 64px;
-  height: 64px;
+  aspect-ratio: 1;
   border-radius: 8px;
-  border: 2px solid var(--c-border, #444);
+  border: 2px dashed var(--c-border, #444);
   cursor: pointer;
   overflow: hidden;
+  position: relative;
   transition: border-color 0.2s;
-  flex-shrink: 0;
+  width: auto;
+  height: auto;
 }
 .ref-slot.active {
   border-color: var(--c-primary, #7c3aed);
+  border-style: solid;
 }
-.ref-slot-empty {
+.ref-describe-block .ref-slot-empty {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
 }
-.ref-slot-empty:hover {
+.ref-describe-block .ref-slot-empty:hover {
   background: rgba(124, 58, 237, 0.1);
+  border-color: var(--c-primary, #7c3aed);
 }
-.ref-slot-plus {
-  font-size: 22px;
+.ref-describe-block .ref-slot-empty:focus {
+  outline: 2px solid var(--c-primary, #7c3aed);
+  outline-offset: -2px;
+  background: rgba(124, 58, 237, 0.15);
+}
+.ref-describe-block .ref-slot-paste-hint {
+  font-size: 11px;
+  color: var(--c-text-muted, #888);
+}
+.ref-describe-block .ref-slot-plus {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 300;
   color: var(--c-text-muted, #888);
 }
 .ref-slot-filled {
@@ -1816,5 +2188,41 @@ onBeforeUnmount(stopPolling)
 }
 .ref-describe-text {
   color: var(--c-text, #ccc);
+}
+
+/* Lightbox */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  outline: none;
+}
+.lightbox-img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 6px;
+  cursor: default;
+}
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 40px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.lightbox-close:hover {
+  opacity: 1;
 }
 </style>
