@@ -6,12 +6,14 @@ import { ref, watch } from 'vue'
 
 export interface AssetItem {
   id: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
   url: string         // resolved URL (server path or blob)
   mimeType: string
   label: string       // e.g. "Image Editing", "Text to Video"
   createdAt: string
   thumbnailUrl?: string
+  duration?: number   // seconds, for audio/video
+  filename?: string
 }
 
 const STORAGE_KEY = 'flowcraft-asset-library'
@@ -30,7 +32,11 @@ function loadFromStorage(): AssetItem[] {
 
 function saveToStorage() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(assets.value))
+    // 過濾掉 base64/blob URL（太大，無法持久化），只保存伺服器路徑
+    const persistable = assets.value.filter(a =>
+      !a.url.startsWith('data:') && !a.url.startsWith('blob:') && a.type !== 'audio'
+    )
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable))
   } catch { /* ignore */ }
 }
 

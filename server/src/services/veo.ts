@@ -338,6 +338,16 @@ async function hydrateOutputs(client: GoogleGenAI, job: VeoJobRecord, operation:
 
 export function getVeoStatus() {
   try {
+    // Veo 優先使用 GCP 憑證（Vertex AI），其次 API Key
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
+    if (existsSync(credentialsPath)) {
+      return {
+        ok: true,
+        configured: true,
+        authMode: 'gcp' as const,
+        message: '已設定 Vertex AI 憑證',
+      }
+    }
     const settings = getGeminiSettings()
     return {
       ok: true,

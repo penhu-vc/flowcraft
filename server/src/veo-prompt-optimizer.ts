@@ -11,59 +11,53 @@ import { join } from 'path'
 const noop = () => {}
 
 // ── Section Index ──────────────────────────────────────────
-// Each section has a key, label, and line range in the guide
+// Each section maps to a standalone file in veo-guide/
 interface Section {
     key: string
     label: string
-    startLine: number
-    endLine: number
+    file: string
 }
 
 const SECTIONS: Section[] = [
-    { key: 'audio',           label: '🎤 音訊與對話整合',          startLine: 159, endLine: 328 },
-    { key: 'dialogue',        label: '💬 對話技巧（防字幕）',      startLine: 230, endLine: 328 },
-    { key: 'sequence',        label: '🎬 進階序列 Prompting',      startLine: 329, endLine: 364 },
-    { key: 'physics',         label: '⚙️ 進階物理模擬',            startLine: 365, endLine: 408 },
-    { key: 'character',       label: '👤 角色一致性',              startLine: 409, endLine: 447 },
-    { key: 'structure',       label: '🎯 8 組件專業架構',          startLine: 448, endLine: 528 },
-    { key: 'cinematography',  label: '📹 專業攝影技法',            startLine: 537, endLine: 560 },
-    { key: 'style',           label: '🎨 風格與類型',              startLine: 561, endLine: 582 },
-    { key: 'narrative',       label: '💫 敘事與情感',              startLine: 595, endLine: 635 },
-    { key: 'negative',        label: '❌ 負面 Prompt 技巧',        startLine: 636, endLine: 647 },
-    { key: 'camera_movement', label: '📷 攝影機運動庫',            startLine: 648, endLine: 774 },
-    { key: 'camera_position', label: '🔥 關鍵攝影機定位',          startLine: 750, endLine: 774 },
-    { key: 'composition',     label: '🖼️ 進階構圖',               startLine: 775, endLine: 900 },
-    { key: 'lighting',        label: '💡 專業打光',                startLine: 901, endLine: 958 },
-    { key: 'selfie',          label: '🤳 自拍影片',                startLine: 959, endLine: 999 },
-    { key: 'movement',        label: '🎮 動作品質控制',            startLine: 1000, endLine: 1043 },
-    { key: 'templates',       label: '📋 範例模板庫',              startLine: 1044, endLine: 1180 },
-    { key: 'audio_advanced',  label: '🎵 進階音訊分類',            startLine: 1186, endLine: 1282 },
-    { key: 'platform',        label: '📱 平台適配（直式影片等）',    startLine: 1287, endLine: 1377 },
-    { key: 'troubleshooting', label: '🛠️ 疑難排解',               startLine: 1419, endLine: 1596 },
-    { key: 'meta_prompt',     label: '🤖 Meta Prompt 引擎',       startLine: 1897, endLine: 2506 },
+    { key: 'audio',           label: '🎤 音訊與對話整合',          file: 'audio.md' },
+    { key: 'dialogue',        label: '💬 對話技巧（防字幕）',      file: 'dialogue.md' },
+    { key: 'sequence',        label: '🎬 進階序列 Prompting',      file: 'sequence.md' },
+    { key: 'physics',         label: '⚙️ 進階物理模擬',            file: 'physics.md' },
+    { key: 'character',       label: '👤 角色一致性',              file: 'character.md' },
+    { key: 'structure',       label: '🎯 8 組件專業架構',          file: 'structure.md' },
+    { key: 'cinematography',  label: '📹 專業攝影技法',            file: 'cinematography.md' },
+    { key: 'style',           label: '🎨 風格與類型',              file: 'style.md' },
+    { key: 'narrative',       label: '💫 敘事與情感',              file: 'narrative.md' },
+    { key: 'negative',        label: '❌ 負面 Prompt 技巧',        file: 'negative.md' },
+    { key: 'camera_movement', label: '📷 攝影機運動庫',            file: 'camera_movement.md' },
+    { key: 'camera_position', label: '🔥 關鍵攝影機定位',          file: 'camera_position.md' },
+    { key: 'composition',     label: '🖼️ 進階構圖',               file: 'composition.md' },
+    { key: 'lighting',        label: '💡 專業打光',                file: 'lighting.md' },
+    { key: 'selfie',          label: '🤳 自拍影片',                file: 'selfie.md' },
+    { key: 'movement',        label: '🎮 動作品質控制',            file: 'movement.md' },
+    { key: 'templates',       label: '📋 範例模板庫',              file: 'templates.md' },
+    { key: 'audio_advanced',  label: '🎵 進階音訊分類',            file: 'audio_advanced.md' },
+    { key: 'platform',        label: '📱 平台適配（直式影片等）',    file: 'platform.md' },
+    { key: 'troubleshooting', label: '🛠️ 疑難排解',               file: 'troubleshooting.md' },
+    { key: 'meta_prompt',     label: '🤖 Meta Prompt 引擎',       file: 'meta_prompt.md' },
 ]
 
-const GUIDE_PATH = join(__dirname, 'veo-prompting-guide.md')
-let guideLines: string[] | null = null
-
-function loadGuide(): string[] {
-    if (!guideLines) {
-        guideLines = readFileSync(GUIDE_PATH, 'utf8').split('\n')
-    }
-    return guideLines
-}
+const GUIDE_DIR = join(__dirname, 'veo-guide')
+const sectionCache = new Map<string, string>()
 
 function getSectionContent(keys: string[]): string {
-    const lines = loadGuide()
     const parts: string[] = []
 
     for (const key of keys) {
         const section = SECTIONS.find(s => s.key === key)
         if (!section) continue
-        const start = Math.max(0, section.startLine - 1)
-        const end = Math.min(lines.length, section.endLine)
+
+        if (!sectionCache.has(key)) {
+            sectionCache.set(key, readFileSync(join(GUIDE_DIR, section.file), 'utf8'))
+        }
+
         parts.push(`\n--- ${section.label} ---\n`)
-        parts.push(lines.slice(start, end).join('\n'))
+        parts.push(sectionCache.get(key)!)
     }
 
     return parts.join('\n')

@@ -1,27 +1,55 @@
 <template>
   <div class="asset-panel" :class="{ open: isOpen }">
     <button class="asset-toggle" @click="isOpen = !isOpen" :title="isOpen ? '收合素材囊' : '展開素材囊'">
-      🎒 <span v-if="!isOpen && assets.length" class="asset-count">{{ assets.length }}</span>
+      🎒
+      <span v-if="!isOpen && assets.length" class="asset-count">{{ assets.length }}</span>
     </button>
+
     <div v-if="isOpen" class="asset-drawer">
+      <!-- Header -->
       <div class="asset-drawer-header">
         <span class="asset-drawer-title">🎒 素材囊</span>
         <span class="asset-drawer-count">{{ assets.length }} 項</span>
       </div>
 
-      <!-- Upload button -->
-      <label class="asset-upload-btn">
-        📤 上傳素材
-        <input type="file" accept="image/*,video/*" multiple hidden @change="onUpload" />
+      <!-- Filter tabs -->
+      <div class="asset-filter-tabs">
+        <button
+          v-for="tab in filterTabs"
+          :key="tab.key"
+          class="filter-tab"
+          :class="{ active: activeFilter === tab.key }"
+          @click="activeFilter = tab.key"
+        >
+          {{ tab.icon }} {{ tab.label }}
+          <span v-if="tab.count" class="filter-count">{{ tab.count }}</span>
+        </button>
+      </div>
+
+      <!-- Upload drop zone -->
+      <label
+        class="asset-upload-zone"
+        :class="{ dragging: isDraggingUpload }"
+        @dragover.prevent="isDraggingUpload = true"
+        @dragleave="isDraggingUpload = false"
+        @drop.prevent="onDropUpload"
+      >
+        <span class="upload-icon">📤</span>
+        <span class="upload-text">拖放或點擊上傳</span>
+        <span class="upload-hint">圖片・影片・音頻</span>
+        <input type="file" accept="image/*,video/*,audio/*" multiple hidden @change="onUpload" />
       </label>
 
-      <div v-if="assets.length === 0" class="asset-empty">
-        <p>尚無素材</p>
-        <p class="asset-empty-hint">在作品上 hover 點「🎒 收入囊中」<br/>或上傳已有的圖片/影片</p>
+      <!-- Empty state -->
+      <div v-if="filteredAssets.length === 0" class="asset-empty">
+        <p>{{ activeFilter === 'all' ? '尚無素材' : `尚無${filterTabs.find(t=>t.key===activeFilter)?.label}` }}</p>
+        <p class="asset-empty-hint">上傳或從作品上點「🎒 收入囊中」</p>
       </div>
-      <div v-else class="asset-list">
+
+      <!-- Asset grid (images/videos) -->
+      <div v-if="gridAssets.length > 0" class="asset-grid">
         <div
-          v-for="asset in assets"
+          v-for="asset in gridAssets"
           :key="asset.id"
           class="asset-thumb"
           draggable="true"
@@ -30,35 +58,80 @@
         >
           <img v-if="asset.type === 'image'" :src="asset.url" alt="" draggable="false" />
           <video v-else :src="asset.url" muted draggable="false" />
-          <span class="asset-type-badge">{{ asset.type === 'image' ? '🖼️' : '🎬' }}</span>
-          <button class="asset-remove-btn" @click.stop="removeAsset(asset.id)" title="移除">×</button>
+          <div class="asset-thumb-overlay">
+            <span class="asset-type-badge">{{ asset.type === 'image' ? '🖼️' : '🎬' }}</span>
+            <button class="asset-remove-btn" @click.stop="removeAsset(asset.id)" title="移除">×</button>
+          </div>
+          <div class="asset-label">{{ asset.filename || asset.label }}</div>
         </div>
       </div>
-      <button v-if="assets.length > 0" class="btn btn-secondary btn-sm asset-clear-btn" @click="clearAll">
-        清空全部
-      </button>
+
+      <!-- Audio list -->
+      <div v-if="audioAssets.length > 0" class="audio-list">
+        <div
+          v-for="asset in audioAssets"
+          :key="asset.id"
+          class="audio-item"
+          draggable="true"
+          @dragstart="onDragStart($event, asset)"
+        >
+          <div class="audio-icon">🎵</div>
+          <div class="audio-info">
+            <div class="audio-name">{{ asset.filename || asset.label }}</div>
+            <div class="audio-meta">
+              {{ asset.duration ? formatDuration(asset.duration) : '' }}
+              {{ asset.mimeType.split('/')[1]?.toUpperCase() }}
+            </div>
+          </div>
+          <button class="audio-remove-btn" @click.stop="removeAsset(asset.id)" title="移除">×</button>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div v-if="assets.length > 0" class="asset-footer">
+        <button class="btn btn-secondary btn-sm asset-clear-btn" @click="clearAll">🗑️ 清空全部</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAssetLibrary, type AssetItem } from '../composables/useAssetLibrary'
 
 const { assets, addAsset, removeAsset, clearAll } = useAssetLibrary()
 const isOpen = ref(false)
+const isDraggingUpload = ref(false)
+const activeFilter = ref<'all' | 'image' | 'video' | 'audio'>('all')
+
+const imageCount = computed(() => assets.value.filter(a => a.type === 'image').length)
+const videoCount = computed(() => assets.value.filter(a => a.type === 'video').length)
+const audioCount = computed(() => assets.value.filter(a => a.type === 'audio').length)
+
+const filterTabs = computed(() => [
+  { key: 'all' as const, icon: '📦', label: '全部', count: assets.value.length },
+  { key: 'image' as const, icon: '🖼️', label: '圖片', count: imageCount.value },
+  { key: 'video' as const, icon: '🎬', label: '影片', count: videoCount.value },
+  { key: 'audio' as const, icon: '🎵', label: '音頻', count: audioCount.value },
+].filter(t => t.key === 'all' || t.count > 0))
+
+const filteredAssets = computed(() =>
+  activeFilter.value === 'all' ? assets.value : assets.value.filter(a => a.type === activeFilter.value)
+)
+
+const gridAssets = computed(() => filteredAssets.value.filter(a => a.type !== 'audio'))
+const audioAssets = computed(() => filteredAssets.value.filter(a => a.type === 'audio'))
+
+function formatDuration(sec: number) {
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m}:${s.toString().padStart(2, '0')} · `
+}
 
 function onDragStart(e: DragEvent, asset: AssetItem) {
   if (!e.dataTransfer) return
-  const payload = JSON.stringify({
-    url: asset.url,
-    type: asset.type,
-    mimeType: asset.mimeType,
-  })
+  const payload = JSON.stringify({ url: asset.url, type: asset.type, mimeType: asset.mimeType })
   e.dataTransfer.setData('application/x-flowcraft-asset', payload)
-  e.dataTransfer.setData('application/x-asset-url', asset.url)
-  e.dataTransfer.setData('application/x-asset-type', asset.type)
-  e.dataTransfer.setData('application/x-asset-mime', asset.mimeType)
   e.dataTransfer.setData('text/plain', asset.url)
   e.dataTransfer.setData('text/uri-list', asset.url)
   e.dataTransfer.effectAllowed = 'copy'
@@ -66,21 +139,22 @@ function onDragStart(e: DragEvent, asset: AssetItem) {
 
 const API_BASE = 'http://localhost:3001'
 
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
-async function onUpload(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files) return
-  for (const file of Array.from(input.files)) {
+async function processFiles(files: File[]) {
+  for (const file of files) {
     const isVideo = file.type.startsWith('video/')
-    const base64 = await fileToBase64(file)
+    const isAudio = file.type.startsWith('audio/')
+
+    if (isAudio) {
+      // Audio: use blob URL, get duration
+      const url = URL.createObjectURL(file)
+      const duration = await getAudioDuration(url)
+      addAsset({ type: 'audio', url, mimeType: file.type, label: file.name, filename: file.name, duration })
+      continue
+    }
+
+    // Image/Video: upload to server
+    const reader = new FileReader()
+    const base64 = await new Promise<string>(r => { reader.onload = () => r(reader.result as string); reader.readAsDataURL(file) })
     try {
       const resp = await fetch(`${API_BASE}/api/assets/upload`, {
         method: 'POST',
@@ -89,18 +163,34 @@ async function onUpload(e: Event) {
       })
       const data = await resp.json()
       if (data.ok) {
-        addAsset({
-          type: isVideo ? 'video' : 'image',
-          url: `${API_BASE}${data.url}`,
-          mimeType: file.type,
-          label: file.name,
-        })
+        addAsset({ type: isVideo ? 'video' : 'image', url: `${API_BASE}${data.url}`, mimeType: file.type, label: file.name, filename: file.name })
       }
-    } catch (err) {
-      console.error('Asset upload failed:', err)
+    } catch {
+      // fallback: use blob URL for images
+      if (!isVideo) addAsset({ type: 'image', url: URL.createObjectURL(file), mimeType: file.type, label: file.name, filename: file.name })
     }
   }
+}
+
+function getAudioDuration(url: string): Promise<number> {
+  return new Promise(resolve => {
+    const audio = new Audio(url)
+    audio.onloadedmetadata = () => resolve(audio.duration)
+    audio.onerror = () => resolve(0)
+  })
+}
+
+async function onUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  await processFiles(Array.from(input.files))
   input.value = ''
+}
+
+async function onDropUpload(e: DragEvent) {
+  isDraggingUpload.value = false
+  const files = Array.from(e.dataTransfer?.files || [])
+  if (files.length) await processFiles(files)
 }
 </script>
 
@@ -116,151 +206,215 @@ async function onUpload(e: Event) {
 }
 
 .asset-toggle {
-  background: var(--c-surface, #1e1e2e);
-  border: 1px solid var(--c-border, #333);
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border, #333);
   border-right: none;
   border-radius: 8px 0 0 8px;
-  padding: 8px 6px;
+  padding: 10px 7px;
   cursor: pointer;
-  font-size: 16px;
-  color: var(--c-text, #ccc);
+  font-size: 18px;
+  color: var(--text-secondary, #ccc);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  transition: background 0.15s;
 }
-.asset-toggle:hover {
-  background: var(--c-surface-hover, #2a2a3e);
-}
+.asset-toggle:hover { background: rgba(124,58,237,0.15); }
 
 .asset-count {
-  font-size: 11px;
-  background: var(--c-primary, #7c3aed);
+  font-size: 10px;
+  background: var(--accent-purple, #7c3aed);
   color: white;
   border-radius: 8px;
-  padding: 0 5px;
+  padding: 1px 5px;
   min-width: 16px;
   text-align: center;
 }
 
 .asset-drawer {
-  background: var(--c-surface, #1e1e2e);
-  border: 1px solid var(--c-border, #333);
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border, #333);
   border-right: none;
-  border-radius: 8px 0 0 8px;
-  width: 220px;
-  max-height: 70vh;
+  border-radius: 12px 0 0 12px;
+  width: 260px;
+  max-height: 80vh;
   overflow-y: auto;
-  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 12px;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.4);
 }
 
 .asset-drawer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border, #333);
 }
-.asset-drawer-title {
-  font-weight: 600;
-  font-size: 14px;
-}
-.asset-drawer-count {
-  font-size: 12px;
-  color: var(--c-text-muted, #888);
-}
+.asset-drawer-title { font-weight: 700; font-size: 14px; color: var(--text-primary, #fff); }
+.asset-drawer-count { font-size: 11px; color: var(--text-secondary, #888); background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 10px; }
 
-.asset-upload-btn {
+/* Filter tabs */
+.asset-filter-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.filter-tab {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px dashed var(--c-border, #555);
-  background: transparent;
-  color: var(--c-text-muted, #aaa);
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary, #aaa);
+  font-size: 11px;
   cursor: pointer;
-  font-size: 12px;
   transition: all 0.15s;
 }
-.asset-upload-btn:hover {
-  border-color: var(--c-primary, #7c3aed);
-  color: var(--c-primary, #7c3aed);
-  background: rgba(124, 58, 237, 0.08);
-}
+.filter-tab:hover { border-color: var(--accent-purple, #7c3aed); color: var(--text-primary, #fff); }
+.filter-tab.active { background: rgba(124,58,237,0.2); border-color: var(--accent-purple, #7c3aed); color: var(--text-primary, #fff); }
+.filter-count { font-size: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 0 4px; }
 
-.asset-empty {
-  text-align: center;
-  padding: 16px 0;
-  color: var(--c-text-muted, #888);
-  font-size: 13px;
+/* Upload zone */
+.asset-upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px;
+  border: 2px dashed var(--border, #444);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: rgba(255,255,255,0.02);
 }
-.asset-empty-hint {
-  font-size: 11px;
-  margin-top: 4px;
-  line-height: 1.5;
+.asset-upload-zone:hover,
+.asset-upload-zone.dragging {
+  border-color: var(--accent-purple, #7c3aed);
+  background: rgba(124,58,237,0.08);
 }
+.upload-icon { font-size: 20px; }
+.upload-text { font-size: 12px; color: var(--text-primary, #ddd); font-weight: 500; }
+.upload-hint { font-size: 10px; color: var(--text-secondary, #888); }
 
-.asset-list {
+/* Empty */
+.asset-empty { text-align: center; padding: 12px 0; color: var(--text-secondary, #888); font-size: 12px; }
+.asset-empty-hint { font-size: 10px; margin-top: 4px; line-height: 1.5; }
+
+/* Grid */
+.asset-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
-
 .asset-thumb {
   position: relative;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   cursor: grab;
-  border: 1px solid var(--c-border, #333);
+  border: 1px solid var(--border, #333);
   aspect-ratio: 1;
+  transition: border-color 0.15s;
 }
-.asset-thumb:active {
-  cursor: grabbing;
-}
+.asset-thumb:hover { border-color: var(--accent-purple, #7c3aed); }
+.asset-thumb:active { cursor: grabbing; }
 .asset-thumb img,
-.asset-thumb video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+.asset-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.asset-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 3px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 40%);
+  opacity: 0;
+  transition: opacity 0.15s;
 }
+.asset-thumb:hover .asset-thumb-overlay { opacity: 1; }
+
+.asset-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  color: #fff;
+  font-size: 9px;
+  padding: 8px 4px 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.asset-thumb:hover .asset-label { opacity: 1; }
 
 .asset-type-badge {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  font-size: 10px;
-  background: rgba(0,0,0,0.6);
+  font-size: 11px;
+  background: rgba(0,0,0,0.55);
   border-radius: 4px;
   padding: 1px 3px;
 }
-
 .asset-remove-btn {
-  position: absolute;
-  top: 2px;
-  right: 2px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: rgba(220, 50, 50, 0.8);
+  background: rgba(220,50,50,0.85);
   color: white;
   border: none;
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
 }
-.asset-thumb:hover .asset-remove-btn {
-  display: flex;
-}
 
-.asset-clear-btn {
-  font-size: 11px;
-  margin-top: 4px;
+/* Audio list */
+.audio-list { display: flex; flex-direction: column; gap: 4px; }
+.audio-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border, #333);
+  cursor: grab;
+  transition: all 0.15s;
 }
+.audio-item:hover { border-color: var(--accent-purple, #7c3aed); background: rgba(124,58,237,0.08); }
+.audio-item:active { cursor: grabbing; }
+.audio-icon { font-size: 20px; flex-shrink: 0; }
+.audio-info { flex: 1; min-width: 0; }
+.audio-name { font-size: 11px; color: var(--text-primary, #ddd); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-meta { font-size: 10px; color: var(--text-secondary, #888); margin-top: 1px; }
+.audio-remove-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(220,50,50,0.7);
+  color: white;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.audio-item:hover .audio-remove-btn { opacity: 1; }
+
+/* Footer */
+.asset-footer { padding-top: 4px; border-top: 1px solid var(--border, #333); }
+.asset-clear-btn { width: 100%; font-size: 11px; }
 </style>

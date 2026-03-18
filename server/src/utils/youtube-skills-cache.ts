@@ -4,9 +4,8 @@
  */
 
 import fs from 'fs'
-import path from 'path'
 
-const CACHE_PATH = path.join(__dirname, '../../sessions/youtube-skills-history.json')
+const CACHE_PATH = 'sessions/youtube-skills-history.json'
 
 export interface SkillResult {
     skillName: string

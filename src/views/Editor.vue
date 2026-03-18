@@ -1,117 +1,34 @@
 <template>
   <!-- Toolbar -->
-  <div class="topbar">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <button class="btn btn-secondary btn-sm" @click="router.back()">← 返回</button>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span v-if="!editingName" class="topbar-title" @dblclick="startEditName" style="cursor:pointer;">
-          {{ wf?.name || '載入中...' }}
-        </span>
-        <input
-          v-else
-          ref="nameInputRef"
-          class="topbar-title-input"
-          v-model="editingNameValue"
-          @blur="saveWorkflowName"
-          @keyup.enter="saveWorkflowName"
-          @keyup.esc="cancelEditName"
-        />
-        <button
-          class="btn-copy"
-          @click="copyWorkflowName"
-          title="複製工作流名稱"
-        >📋</button>
-      </div>
-      <span class="badge badge-active" v-if="wf?.active">● 執行中</span>
-    </div>
-    <div class="topbar-actions">
-      <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignCenter" title="垂直置中對齊">⫼ 置中</button>
-      <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="alignHorizontal" title="水平對齊">⫻ 水平</button>
-      <button class="btn btn-secondary btn-sm" @click="applyAutoLayout" title="自動排版節點">✨ 自動排版</button>
-      <button class="btn btn-secondary btn-sm" @click="onSave">💾 儲存</button>
-      <button class="btn btn-secondary btn-sm" @click="store.exportWorkflow(wfId)">⬇️ 匯出</button>
-      <button
-        class="btn btn-success btn-sm"
-        @click="onExecute"
-        :disabled="executionStore.isRunning"
-      >
-        {{ executionStore.isRunning ? '⏳ 執行中...' : '▶️ 執行工作流' }}
-      </button>
-      <!-- DEBUG -->
-      <span v-if="executionStore.currentExecution" style="color: lime; font-size: 10px; margin-left: 8px;">
-        🟢 執行中: {{ executionStore.currentExecution.id }}
-      </span>
-      <button class="btn btn-primary btn-sm" @click="store.toggleActive(wfId)">
-        {{ wf?.active ? '⏹ 停用' : '▶ 啟用' }}
-      </button>
-    </div>
-  </div>
+  <EditorToolbar
+    :workflowName="wf?.name || ''"
+    :isActive="!!wf?.active"
+    :hasMultiSelection="hasMultiSelection"
+    :isRunning="executionStore.isRunning"
+    :currentExecutionId="executionStore.currentExecution?.id || null"
+    @go-back="router.back()"
+    @align-center="alignCenter"
+    @align-horizontal="alignHorizontal"
+    @auto-layout="applyAutoLayout"
+    @save="onSave"
+    @export="store.exportWorkflow(wfId)"
+    @execute="onExecute"
+    @toggle-active="store.toggleActive(wfId)"
+    @update-name="onUpdateName"
+  />
 
   <div class="editor-layout">
     <!-- Node Palette -->
-    <div class="palette">
-      <!-- Workflow Settings -->
-      <div class="workflow-settings">
-        <div class="workflow-settings-header">⚙️ 工作流設定</div>
-        <div class="workflow-settings-body">
-          <div class="form-group-compact">
-            <label class="form-label-sm">觸發器運行模式</label>
-            <select class="form-select-sm" v-model="triggerMode" @change="onTriggerModeChange">
-              <option value="fallback">運行失敗時更換</option>
-              <option value="sequential">按順序觸發</option>
-            </select>
-            <div class="form-hint">
-              <span v-if="triggerMode === 'fallback'">依序嘗試觸發器，第一個成功就停止</span>
-              <span v-else>依序執行所有觸發器，每個都執行完整工作流</span>
-            </div>
-          </div>
-
-          <div class="form-group-compact" v-if="triggerNodes.length > 0">
-            <label class="form-label-sm">觸發器順序（{{ triggerNodes.length }} 個）</label>
-            <div class="trigger-list">
-              <div v-for="trigger in sortedTriggers" :key="trigger.id" class="trigger-item">
-                <input
-                  type="number"
-                  class="trigger-order-input"
-                  :value="trigger.data.triggerOrder || 999"
-                  @input="updateTriggerOrder(trigger.id, $event)"
-                  min="1"
-                  max="99"
-                />
-                <span class="trigger-icon">{{ trigger.data.icon || '▶️' }}</span>
-                <span class="trigger-name">{{ trigger.data.label || trigger.type }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="palette-search">
-        <input class="form-input" v-model="search" placeholder="🔍 搜尋節點..." />
-      </div>
-      <div class="palette-body">
-        <template v-for="(nodes, cat) in filteredByCategory" :key="cat">
-          <div v-if="nodes.length > 0">
-            <div class="palette-cat-label">{{ CATEGORY_LABELS[cat] }}</div>
-            <div
-              v-for="node in nodes"
-              :key="node.id"
-              class="palette-node"
-              draggable="true"
-              @dragstart="onDragStart($event, node.id)"
-            >
-              <span class="palette-node-icon" :style="{ background: CATEGORY_COLORS[node.category] + '22', color: CATEGORY_COLORS[node.category] }">
-                {{ node.icon }}
-              </span>
-              <div>
-                <div class="palette-node-name">{{ node.name }}</div>
-                <div class="palette-node-desc">{{ node.description }}</div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-    </div>
+    <NodePalette
+      :triggerMode="triggerMode"
+      :sortedTriggers="sortedTriggers"
+      :search="search"
+      :filteredByCategory="filteredByCategory"
+      @update:search="search = $event"
+      @update-trigger-mode="onTriggerModeUpdate"
+      @update-trigger-order="updateTriggerOrder"
+      @drag-start="draggedNodeType = $event"
+    />
 
     <!-- Canvas -->
     <div class="canvas-area" ref="canvasRef" @dragover.prevent @drop="onDrop">
@@ -151,267 +68,48 @@
       </Transition>
 
       <!-- Node Search Panel -->
-      <Transition name="search">
-        <div v-if="showSearch" class="search-panel">
-          <div class="search-header">
-            <input
-              ref="searchInputRef"
-              class="search-input"
-              v-model="searchQuery"
-              placeholder="🔍 搜尋節點... (↑↓ 選擇, Enter 跳轉, ESC 關閉)"
-              @keydown.esc="closeSearch"
-            />
-            <button class="btn btn-icon btn-sm" @click="closeSearch">✕</button>
-          </div>
-          <div class="search-results">
-            <div v-if="searchResults.length === 0 && searchQuery" class="search-empty">
-              沒有找到符合的節點
-            </div>
-            <div
-              v-for="(node, index) in searchResults"
-              :key="node.id"
-              class="search-result-item"
-              :class="{ active: index === selectedResultIndex }"
-              @click="jumpToNode(node.id); closeSearch()"
-            >
-              <span class="search-result-icon" :style="{ background: CATEGORY_COLORS[node.data.category] + '22', color: CATEGORY_COLORS[node.data.category] }">
-                {{ node.data.icon }}
-              </span>
-              <div class="search-result-content">
-                <div class="search-result-name">{{ node.data.label }}</div>
-                <div class="search-result-type">{{ node.data.nodeType }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
+      <NodeSearchPanel
+        :show="showSearch"
+        :query="searchQuery"
+        :results="searchResults"
+        :selectedIndex="selectedResultIndex"
+        @update:query="searchQuery = $event"
+        @close="closeSearch"
+        @select="(id: string) => { jumpToNode(id); closeSearch() }"
+      />
 
       <!-- Execution Stats Panel -->
-      <Transition name="fade">
-        <div v-if="executionStore.executionStats" class="execution-stats-panel">
-          <div class="stats-header">
-            <span class="stats-icon">📊</span>
-            <span class="stats-title">執行時間分析</span>
-          </div>
-          <div class="stats-body">
-            <!-- Summary Stats -->
-            <div class="stats-summary">
-              <div class="stat-item">
-                <div class="stat-label">總執行時間</div>
-                <div class="stat-value">{{ formatDuration(executionStore.executionStats.totalDuration || 0) }}</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-label">已完成節點</div>
-                <div class="stat-value">{{ executionStore.executionStats.completedCount }} / {{ executionStore.executionStats.totalCount }}</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-label">平均時間</div>
-                <div class="stat-value">{{ formatDuration(executionStore.executionStats.avgDuration) }}</div>
-              </div>
-            </div>
-
-            <!-- Slowest Nodes -->
-            <div v-if="executionStore.executionStats.slowestNodes.length > 0" class="slowest-nodes">
-              <div class="slowest-header">🐌 最慢的節點</div>
-              <div class="slowest-list">
-                <div
-                  v-for="(node, index) in executionStore.executionStats.slowestNodes"
-                  :key="node.nodeId"
-                  class="slowest-node-item"
-                  @click="jumpToNode(node.nodeId)"
-                >
-                  <span class="slowest-rank">#{{ index + 1 }}</span>
-                  <span class="slowest-node-id">{{ node.nodeId }}</span>
-                  <span class="slowest-duration">{{ formatDuration(node.duration || 0) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
+      <ExecutionStatsPanel
+        :executionStats="executionStore.executionStats"
+        @jump-to-node="jumpToNode"
+      />
 
       <!-- Execution Log Panel -->
-      <Transition name="slide-up">
-        <div v-if="executionStore.currentExecution" class="execution-panel">
-          <div class="execution-header">
-            <div>
-              <span class="execution-status" :class="executionStore.currentExecution.status">
-                {{ executionStore.currentExecution.status === 'running' ? '⏳' :
-                   executionStore.currentExecution.status === 'completed' ? '✅' :
-                   executionStore.currentExecution.status === 'failed' ? '❌' : '⏸' }}
-              </span>
-              <span style="font-size:12px;font-weight:600;margin-left:6px;">
-                執行 {{ executionStore.currentExecution.id }}
-              </span>
-              <span v-if="executionStore.currentExecution.duration" style="font-size:11px;color:var(--text-muted);margin-left:8px;">
-                ({{ (executionStore.currentExecution.duration / 1000).toFixed(1) }}s)
-              </span>
-            </div>
-            <button class="btn btn-icon btn-sm" @click="executionStore.clearExecution()">✕</button>
-          </div>
-          <div class="execution-body">
-            <div v-for="[nodeId, nodeExec] in Array.from(executionStore.currentExecution.nodes.entries())" :key="nodeId" class="execution-node">
-              <div class="execution-node-header">
-                <span class="execution-node-status" :class="nodeExec.status">
-                  {{ nodeExec.status === 'running' ? '🔵' :
-                     nodeExec.status === 'completed' ? '🟢' :
-                     nodeExec.status === 'failed' ? '🔴' : '⚪' }}
-                </span>
-                <span style="font-size:11px;font-weight:500;">{{ nodeId }}</span>
-                <span v-if="nodeExec.duration" style="font-size:10px;color:var(--text-muted);margin-left:auto;">
-                  {{ (nodeExec.duration / 1000).toFixed(1) }}s
-                </span>
-              </div>
-              <div v-if="nodeExec.progress !== undefined" class="execution-progress">
-                <div class="execution-progress-bar" :style="{ width: nodeExec.progress + '%' }"></div>
-                <span class="execution-progress-text">{{ nodeExec.progress }}%</span>
-              </div>
-              <div v-if="nodeExec.logs.length > 0" class="execution-logs">
-                <div v-for="(log, i) in nodeExec.logs.slice(-3)" :key="i" class="execution-log">
-                  {{ log }}
-                </div>
-              </div>
-              <div v-if="nodeExec.error" class="execution-error">
-                ❌ {{ nodeExec.error }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
+      <ExecutionLogPanel
+        :currentExecution="executionStore.currentExecution"
+        @clear-execution="executionStore.clearExecution()"
+      />
     </div>
 
     <!-- Properties Panel -->
-    <Transition name="slide-right">
-      <div v-if="selectedNodeId" class="props-panel">
-        <div class="props-header">
-          <div>
-            <div style="font-size:11px;color:var(--text-muted);">設定節點</div>
-            <div class="props-title">{{ selectedDef?.icon }} {{ selectedDef?.name }}</div>
-          </div>
-          <button class="btn btn-icon btn-secondary" @click="selectedNodeId = null">✕</button>
-        </div>
-        <div class="props-body">
-          <div v-if="!selectedDef" style="color:var(--text-muted);font-size:13px;">未知節點類型</div>
-          <template v-else>
-            <!-- Custom config component (e.g. YouTubeMonitorConfig) -->
-            <component
-              v-if="customConfigComponent"
-              :is="customConfigComponent"
-              :config="nodeData"
-              :inputs="selectedDef.inputs"
-              :outputs="selectedDef.outputs"
-              :nodeId="selectedNodeId"
-              :nodes="nodes"
-              :edges="edges"
-              @update="onCustomConfigUpdate"
-            />
-            <!-- Generic config renderer -->
-            <template v-else>
-              <div v-if="!selectedDef.inputs || selectedDef.inputs.length === 0" style="padding:12px;color:var(--text-muted);font-size:13px;">
-                此節點無需設定參數
-              </div>
-              <div v-else class="form-group" v-for="field in selectedDef.inputs" :key="field.key" style="margin-bottom:14px;">
-                <label class="form-label">
-                  {{ field.label }} <span v-if="field.required" style="color:var(--red);">*</span>
-                </label>
-                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;" v-if="field.description">{{ field.description }}</div>
-                <textarea v-if="field.type === 'textarea'" class="form-textarea" v-model="nodeData[field.key]" :placeholder="field.placeholder" @blur="updateNodeConfig" />
-                <select v-else-if="field.type === 'select'" class="form-select" v-model="nodeData[field.key]" @change="updateNodeConfig">
-                  <option v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                </select>
-                <input v-else class="form-input" :type="field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'" v-model="nodeData[field.key]" :placeholder="field.placeholder" @blur="updateNodeConfig" />
-              </div>
-              <!-- 一鍵複製指令（script-generator 專用） -->
-              <div v-if="selectedDef?.id === 'script-generator'" style="margin-bottom:14px;">
-                <button class="btn btn-secondary btn-sm" style="width:100%;" @click="copyScriptGeneratorPrompt">
-                  {{ copyPromptLabel }}
-                </button>
-              </div>
-              <div class="divider" />
-              <!-- Port visibility for generic nodes -->
-              <PortVisibilityEditor
-                :inputs="portableInputs"
-                :outputs="selectedDef.outputs"
-                :hiddenPorts="hiddenPortsFromConfig"
-                :inputOrder="inputOrderFromConfig"
-                :outputOrder="outputOrderFromConfig"
-                portColor="var(--accent-cyan)"
-                @update="onGenericHiddenPortsUpdate"
-                @update-input-order="onInputOrderUpdate"
-                @update-order="onOutputOrderUpdate"
-              />
-            </template>
-
-            <!-- 🆕 快取開關（所有節點都有） -->
-            <div class="divider" />
-            <div class="cache-control">
-              <div class="cache-header">
-                <span>⚡ 使用快取結果</span>
-                <label class="switch">
-                  <input
-                    type="checkbox"
-                    v-model="nodeData.useCachedResult"
-                    :disabled="!nodeCacheStore.hasCache(selectedNodeId || '')"
-                    @change="updateNodeConfig"
-                  />
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="cache-hint">
-                <template v-if="nodeCacheStore.hasCache(selectedNodeId || '')">
-                  ✅ 有快取（{{ nodeCacheStore.getCacheAge(selectedNodeId || '') }}）
-                </template>
-                <template v-else>
-                  ⚪ 無快取（需先執行一次）
-                </template>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
-    </Transition>
+    <NodePropertiesPanel
+      ref="propsPanelRef"
+      :selectedNodeId="selectedNodeId"
+      :nodes="nodes"
+      :edges="edges"
+      :hasCache="nodeCacheStore.hasCache(selectedNodeId || '')"
+      :cacheAge="nodeCacheStore.getCacheAge(selectedNodeId || '')"
+      @close="selectedNodeId = null"
+      @update-config="onPropsUpdateConfig"
+      @custom-config-update="onCustomConfigUpdate"
+    />
   </div>
 
   <!-- Script Result Modal -->
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="executionStore.scriptResultModal" class="modal-overlay" @click.self="executionStore.closeScriptResult()">
-        <div class="script-modal">
-          <div class="script-modal-header">
-            <div class="script-modal-title">
-              <span class="script-modal-icon">🎬</span>
-              腳本生成完成
-            </div>
-            <button class="btn btn-icon btn-sm" @click="executionStore.closeScriptResult()">✕</button>
-          </div>
-          <div class="script-modal-body">
-            <div v-if="executionStore.scriptResultModal.keywords?.length" class="script-keywords">
-              <span class="keywords-label">關鍵字：</span>
-              <span v-for="(kw, i) in executionStore.scriptResultModal.keywords" :key="i" class="keyword-tag">
-                {{ kw }}
-              </span>
-            </div>
-            <div class="script-content">
-              <pre>{{ executionStore.scriptResultModal.script }}</pre>
-            </div>
-          </div>
-          <div class="script-modal-footer">
-            <span class="script-timestamp">
-              {{ new Date(executionStore.scriptResultModal.timestamp).toLocaleString('zh-TW') }}
-            </span>
-            <div class="script-actions">
-              <button class="btn btn-secondary btn-sm" @click="copyScript">
-                📋 複製腳本
-              </button>
-              <button class="btn btn-primary btn-sm" @click="executionStore.closeScriptResult()">
-                確定
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <ScriptResultModal
+    :scriptResultModal="executionStore.scriptResultModal"
+    @close="executionStore.closeScriptResult()"
+  />
 </template>
 
 <script setup lang="ts">
@@ -424,18 +122,8 @@ import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import type { Node, Edge } from '@vue-flow/core'
 import { useWorkflowStore } from '../stores/workflow'
-import { NODE_REGISTRY, CATEGORY_COLORS, CATEGORY_LABELS, getNodeDef } from '../nodes/registry'
+import { NODE_REGISTRY, CATEGORY_COLORS, getNodeDef } from '../nodes/registry'
 import CustomNode from '../components/CustomNode.vue'
-import YouTubeMonitorConfig from '../components/YouTubeMonitorConfig.vue'
-import YouTubeRecentVideosConfig from '../components/YouTubeRecentVideosConfig.vue'
-import NotebookLMConfig from '../components/NotebookLMConfig.vue'
-import SendTelegramConfig from '../components/SendTelegramConfig.vue'
-import SegmentMiningConfig from '../components/SegmentMiningConfig.vue'
-import BulletPointReferenceConfig from '../components/BulletPointReferenceConfig.vue'
-import WriteCollectionConfig from '../components/WriteCollectionConfig.vue'
-import ExecutionLoggerConfig from '../components/ExecutionLoggerConfig.vue'
-import PortVisibilityEditor from '../components/PortVisibilityEditor.vue'
-import { API_ENDPOINTS } from '../api/config'
 import { useWorkflowExecution } from '../composables/useWorkflowExecution'
 import { useHistory } from '../composables/useHistory'
 import { useExecutionStore } from '../stores/execution'
@@ -443,25 +131,24 @@ import { useNodeCacheStore } from '../stores/nodeCache'
 import type { Workflow } from '../api/workflow'
 import { useNodeSearch } from '../composables/useNodeSearch'
 import { useAutoLayout } from '../composables/useAutoLayout'
+import { useEditorKeyboard } from '../composables/useEditorKeyboard'
+import { useEdgeStyles } from '../composables/useEdgeStyles'
 
-// Map of customConfig name -> component
-const CUSTOM_CONFIG_MAP: Record<string, any> = {
-  YouTubeMonitorConfig,
-  YouTubeRecentVideosConfig,
-  NotebookLMConfig,
-  SendTelegramConfig,
-  SegmentMiningConfig,
-  BulletPointReferenceConfig,
-  WriteCollectionConfig,
-  ExecutionLoggerConfig,
-}
+// Sub-components
+import EditorToolbar from '../components/editor/EditorToolbar.vue'
+import NodePalette from '../components/editor/NodePalette.vue'
+import NodeSearchPanel from '../components/editor/NodeSearchPanel.vue'
+import ExecutionStatsPanel from '../components/editor/ExecutionStatsPanel.vue'
+import ExecutionLogPanel from '../components/editor/ExecutionLogPanel.vue'
+import NodePropertiesPanel from '../components/editor/NodePropertiesPanel.vue'
+import ScriptResultModal from '../components/editor/ScriptResultModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useWorkflowStore()
 const { executeWorkflow } = useWorkflowExecution()
 const executionStore = useExecutionStore()
-const nodeCacheStore = useNodeCacheStore()  // 直接獲取 store，確保 reactive
+const nodeCacheStore = useNodeCacheStore()
 
 const wfId = route.params.id as string
 const wf = computed(() => store.getWorkflow(wfId))
@@ -469,48 +156,60 @@ const wf = computed(() => store.getWorkflow(wfId))
 const nodes = ref<Node[]>(wf.value?.nodes || [])
 const edges = ref<Edge[]>(wf.value?.edges || [])
 
-// Undo/Redo 歷史管理
+// Undo/Redo history
 const { canUndo, canRedo, recordHistory, initHistory, undo, redo } = useHistory(nodes, edges)
 
-// 節點搜尋功能
+// Node search
 const {
-  searchQuery,
-  showSearch,
-  searchResults,
-  selectedResultIndex,
-  openSearch,
-  closeSearch,
-  jumpToNode,
-  selectNextResult,
-  selectPrevResult
+  searchQuery, showSearch, searchResults, selectedResultIndex,
+  openSearch, closeSearch, jumpToNode, selectNextResult, selectPrevResult
 } = useNodeSearch(nodes)
 
-// 自動排版功能
+// Auto layout
 const { autoLayout } = useAutoLayout()
 
-// 觸發器設定
+// Properties panel
+const selectedNodeId = ref<string | null>(null)
+const selectedEdgeId = ref<string | null>(null)
+const propsPanelRef = ref<InstanceType<typeof NodePropertiesPanel> | null>(null)
+
+// VueFlow utilities
+const canvasRef = ref<HTMLElement>()
+const { project, updateNode, getSelectedNodes } = useVueFlow()
+const selectedNodes = computed(() => getSelectedNodes.value)
+const hasMultiSelection = computed(() => selectedNodes.value.length >= 2)
+
+// Edge styling
+const runningNodeIdRef = computed(() => executionStore.runningNodeId)
+const { styledEdges } = useEdgeStyles(nodes, edges, selectedNodeId, selectedEdgeId, selectedNodes, runningNodeIdRef)
+
+// Keyboard shortcuts
+const { showUndoRedoToast, setupKeyboard, teardownKeyboard } = useEditorKeyboard({
+  nodes, selectedNodeId, showSearch, searchResults, selectedResultIndex,
+  canUndo, canRedo,
+  openSearch, closeSearch, selectNextResult, selectPrevResult, jumpToNode,
+  undo, redo, recordHistory
+})
+
+// Trigger settings
 const triggerMode = ref<'fallback' | 'sequential'>(wf.value?.triggerMode || 'fallback')
 const triggerNodes = computed(() => {
   const triggerTypes = ['manual-trigger', 'youtube-monitor', 'youtube-recent-videos']
   return nodes.value.filter(node => {
-    // 使用 node.data.nodeType 來判斷（因為 node.type 通常是 'custom'）
     const nodeType = node.data?.nodeType || node.type
     const nodeDef = getNodeDef(nodeType)
     return nodeDef?.category === 'trigger' || triggerTypes.includes(nodeType)
   })
 })
 const sortedTriggers = computed(() => {
-  return [...triggerNodes.value].sort((a, b) => {
-    const orderA = a.data.triggerOrder || 999
-    const orderB = b.data.triggerOrder || 999
-    return orderA - orderB
-  })
+  return [...triggerNodes.value].sort((a, b) =>
+    (a.data.triggerOrder || 999) - (b.data.triggerOrder || 999)
+  )
 })
 
-// Sync nodes/edges when workflow changes (e.g., after save)
+// Sync nodes/edges when workflow changes
 watch(wf, (newWf) => {
   if (newWf && newWf.nodes && newWf.edges) {
-    // Only sync if not currently editing to avoid overwriting changes
     if (!selectedNodeId.value) {
       nodes.value = newWf.nodes
       edges.value = newWf.edges
@@ -518,72 +217,18 @@ watch(wf, (newWf) => {
   }
 })
 
-// Workflow name editing
-const editingName = ref(false)
-const editingNameValue = ref('')
-const nameInputRef = ref<HTMLInputElement | null>(null)
-
-// Search input ref
-const searchInputRef = ref<HTMLInputElement | null>(null)
-
-function startEditName() {
-  if (!wf.value) return
-  editingNameValue.value = wf.value.name
-  editingName.value = true
-  setTimeout(() => nameInputRef.value?.focus(), 0)
-}
-
-function saveWorkflowName() {
-  if (!editingName.value || !wf.value) return
-  const newName = editingNameValue.value.trim()
-  if (newName && newName !== wf.value.name) {
-    store.updateWorkflow(wfId, { ...wf.value, name: newName })
+watch(() => wf.value, (v) => {
+  if (v) {
+    nodes.value = v.nodes.map(n => ({ ...n, dragHandle: '.node-header' }))
+    edges.value = v.edges
   }
-  editingName.value = false
-}
+}, { immediate: true })
 
-function cancelEditName() {
-  editingName.value = false
-  editingNameValue.value = ''
-}
-
-async function copyWorkflowName() {
+// Trigger settings functions
+function onTriggerModeUpdate(mode: 'fallback' | 'sequential') {
+  triggerMode.value = mode
   if (!wf.value) return
-  const nameWithPrefix = `工作流 ${wf.value.name}`
-  try {
-    await navigator.clipboard.writeText(nameWithPrefix)
-    // Show toast notification
-    const toast = document.createElement('div')
-    toast.className = 'copy-toast'
-    toast.textContent = '✅ 已複製'
-    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--accent-cyan);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.3s ease;'
-    document.body.appendChild(toast)
-    setTimeout(() => toast.remove(), 2000)
-  } catch (err) {
-    console.error('Failed to copy:', err)
-  }
-}
-
-async function copyScript() {
-  const script = executionStore.scriptResultModal?.script
-  if (!script) return
-  try {
-    await navigator.clipboard.writeText(script)
-    const toast = document.createElement('div')
-    toast.textContent = '✅ 腳本已複製'
-    toast.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--accent-cyan);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.3s ease;'
-    document.body.appendChild(toast)
-    setTimeout(() => toast.remove(), 2000)
-  } catch (err) {
-    console.error('Failed to copy script:', err)
-  }
-}
-
-// 觸發器設定相關函數
-function onTriggerModeChange() {
-  if (!wf.value) return
-  // 直接更新工作流，不調用 saveWorkflow（會覆蓋）
-  store.updateWorkflow(wfId, { ...wf.value, triggerMode: triggerMode.value })
+  store.updateWorkflow(wfId, { ...wf.value, triggerMode: mode })
 }
 
 function updateTriggerOrder(nodeId: string, event: Event) {
@@ -596,82 +241,14 @@ function updateTriggerOrder(nodeId: string, event: Event) {
   }
 }
 
-// Computed edges with dynamic styling based on selection and disabled state
-const styledEdges = computed(() => {
-  return edges.value.map(edge => {
-    const sourceNode = nodes.value.find(n => n.id === edge.source)
-    const targetNode = nodes.value.find(n => n.id === edge.target)
-
-    // Check if connected to disabled node
-    const isDisabledEdge = sourceNode?.data.disabled || targetNode?.data.disabled
-
-    // Check if this edge is selected
-    const isSelectedEdge = edge.id === selectedEdgeId.value
-
-    // Check if connected to selected node
-    const isConnectedToSelected = selectedNodeId.value &&
-      (edge.source === selectedNodeId.value || edge.target === selectedNodeId.value)
-
-    // Check if edge connects two multi-selected nodes
-    const multiSelectedIds = new Set(selectedNodes.value.map(n => n.id))
-    const isMultiSelectedEdge = multiSelectedIds.size >= 2 &&
-      multiSelectedIds.has(edge.source) && multiSelectedIds.has(edge.target)
-
-    // Check if connected to executing node
-    const runningNodeId = executionStore.runningNodeId
-    const isConnectedToExecuting = runningNodeId &&
-      (edge.source === runningNodeId || edge.target === runningNodeId)
-    const isDownstreamOfExecuting = runningNodeId && edge.source === runningNodeId
-
-    // Determine edge class (priority: executing > disabled > edge selection > multi-select > node selection)
-    let edgeClass = ''
-    let animated = false
-
-    if (isDisabledEdge) {
-      // Disabled nodes always have dimmed edges
-      edgeClass = 'edge-dimmed'
-    } else if (runningNodeId) {
-      // When a node is executing
-      if (isDownstreamOfExecuting) {
-        edgeClass = 'edge-executing'
-        animated = true
-      } else {
-        edgeClass = 'edge-dimmed'
-      }
-    } else if (selectedEdgeId.value) {
-      // When an edge is selected
-      edgeClass = isSelectedEdge ? 'edge-highlighted' : 'edge-dimmed'
-      animated = isSelectedEdge
-    } else if (multiSelectedIds.size >= 2) {
-      // When multiple nodes are selected, highlight edges between them
-      edgeClass = isMultiSelectedEdge ? 'edge-highlighted' : 'edge-dimmed'
-      animated = isMultiSelectedEdge
-    } else if (selectedNodeId.value) {
-      // When a node is selected
-      edgeClass = isConnectedToSelected ? 'edge-highlighted' : 'edge-dimmed'
-      animated = isConnectedToSelected
-    }
-
-    return {
-      ...edge,
-      class: edgeClass,
-      animated
-    }
-  })
-})
-
-watch(() => wf.value, (v) => {
-  if (v) {
-    // Inject dragHandle so port handles are not blocked by node drag
-    nodes.value = v.nodes.map(n => ({ ...n, dragHandle: '.node-header' }))
-    edges.value = v.edges
-  }
-}, { immediate: true })
+function onUpdateName(newName: string) {
+  if (!wf.value) return
+  store.updateWorkflow(wfId, { ...wf.value, name: newName })
+}
 
 // Palette
 const search = ref('')
 
-// 取得隱藏的節點列表
 function getHiddenNodes(): Set<string> {
   const stored = localStorage.getItem('flowcraft_hidden_nodes')
   return stored ? new Set(JSON.parse(stored)) : new Set()
@@ -681,11 +258,10 @@ const filteredByCategory = computed(() => {
   const q = search.value.toLowerCase()
   const hiddenNodes = getHiddenNodes()
   const result: Record<string, typeof NODE_REGISTRY> = {}
-
   for (const cat of ['trigger','action','ai','data','media','logic']) {
     result[cat] = NODE_REGISTRY.filter(n =>
       n.category === cat &&
-      !hiddenNodes.has(n.id) &&  // 過濾隱藏的節點
+      !hiddenNodes.has(n.id) &&
       (!q || n.name.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
     )
   }
@@ -694,93 +270,6 @@ const filteredByCategory = computed(() => {
 
 // Drag & Drop
 const draggedNodeType = ref('')
-function onDragStart(e: DragEvent, nodeId: string) {
-  draggedNodeType.value = nodeId
-  e.dataTransfer!.effectAllowed = 'move'
-}
-
-const canvasRef = ref<HTMLElement>()
-const { project, updateNode, getSelectedNodes } = useVueFlow()
-
-// 多選節點（VueFlow 內建 Shift 多選）
-const selectedNodes = computed(() => getSelectedNodes.value)
-const hasMultiSelection = computed(() => selectedNodes.value.length >= 2)
-
-// 置中對齊（以第一個選擇的節點為基準，X 軸對齊）
-function alignCenter() {
-  const selected = selectedNodes.value
-  if (selected.length < 2) return
-  const anchor = selected[0]
-  const anchorCenterX = anchor.position.x + ((anchor.dimensions?.width || 220) / 2)
-  for (let i = 1; i < selected.length; i++) {
-    const node = selected[i]
-    const nodeWidth = node.dimensions?.width || 220
-    node.position = { ...node.position, x: anchorCenterX - (nodeWidth / 2) }
-  }
-  recordHistory()
-}
-
-// 水平對齊（以第一個選擇的節點為基準，Y 軸對齊）
-function alignHorizontal() {
-  const selected = selectedNodes.value
-  if (selected.length < 2) return
-  const anchor = selected[0]
-  const anchorY = anchor.position.y
-  for (let i = 1; i < selected.length; i++) {
-    selected[i].position = { ...selected[i].position, y: anchorY }
-  }
-  recordHistory()
-}
-
-// 自動排版
-function applyAutoLayout() {
-  const layoutedNodes = autoLayout(nodes.value, edges.value, 'LR')
-  nodes.value = layoutedNodes
-  recordHistory()
-  showUndoRedoToast('✨ 自動排版完成')
-}
-
-// 格式化執行時間
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  const minutes = Math.floor(ms / 60000)
-  const seconds = Math.floor((ms % 60000) / 1000)
-  return `${minutes}m ${seconds}s`
-}
-
-// 重試失敗的節點
-function handleRetryNode(nodeId: string) {
-  const nodeExec = executionStore.getNodeExecution(nodeId)
-  if (!nodeExec) return
-
-  // 清除該節點的錯誤狀態
-  executionStore.updateNodeStatus(nodeId, 'pending', {
-    error: undefined,
-    completedAt: undefined,
-    duration: undefined
-  })
-
-  // 顯示提示
-  showUndoRedoToast(`🔄 ${nodeId} 已重置，請重新執行工作流`)
-}
-
-// 一鍵複製指令（script-generator）
-const copyPromptLabel = ref('📋 一鍵複製指令')
-async function copyScriptGeneratorPrompt() {
-  try {
-    copyPromptLabel.value = '⏳ 載入中...'
-    const res = await fetch(API_ENDPOINTS.promptsScriptGenerator)
-    const data = await res.json()
-    if (!data.ok) throw new Error(data.error)
-    await navigator.clipboard.writeText(data.combined)
-    copyPromptLabel.value = '✅ 已複製！'
-    setTimeout(() => { copyPromptLabel.value = '📋 一鍵複製指令' }, 2000)
-  } catch (err) {
-    copyPromptLabel.value = '❌ 複製失敗'
-    setTimeout(() => { copyPromptLabel.value = '📋 一鍵複製指令' }, 2000)
-  }
-}
 
 function onDrop(e: DragEvent) {
   if (!draggedNodeType.value) return
@@ -797,179 +286,57 @@ function onDrop(e: DragEvent) {
   }
   nodes.value.push(newNode)
   draggedNodeType.value = ''
-  recordHistory()  // 記錄歷史
+  recordHistory()
 }
 
-// Copy & Paste
-const copiedNode = ref<Node | null>(null)
-
-function copyNode() {
-  if (!selectedNodeId.value) return
-  const node = nodes.value.find(n => n.id === selectedNodeId.value)
-  if (node) {
-    copiedNode.value = JSON.parse(JSON.stringify(node)) // Deep clone
-    console.log('📋 Copied node:', node.data.label)
+// Alignment
+function alignCenter() {
+  const selected = selectedNodes.value
+  if (selected.length < 2) return
+  const anchor = selected[0]
+  const anchorCenterX = anchor.position.x + ((anchor.dimensions?.width || 220) / 2)
+  for (let i = 1; i < selected.length; i++) {
+    const node = selected[i]
+    const nodeWidth = node.dimensions?.width || 220
+    node.position = { ...node.position, x: anchorCenterX - (nodeWidth / 2) }
   }
+  recordHistory()
 }
 
-function pasteNode() {
-  if (!copiedNode.value) return
-
-  // Create new node - only copy necessary properties to avoid grouping issues
-  const newNode: Node = {
-    id: `${copiedNode.value.data.nodeType}-${Date.now()}`,
-    type: copiedNode.value.type,
-    position: {
-      x: copiedNode.value.position.x + 50,
-      y: copiedNode.value.position.y + 50,
-    },
-    dragHandle: '.node-header',
-    data: JSON.parse(JSON.stringify(copiedNode.value.data)), // Deep clone data
+function alignHorizontal() {
+  const selected = selectedNodes.value
+  if (selected.length < 2) return
+  const anchorY = selected[0].position.y
+  for (let i = 1; i < selected.length; i++) {
+    selected[i].position = { ...selected[i].position, y: anchorY }
   }
-
-  nodes.value.push(newNode)
-  selectedNodeId.value = newNode.id
-  console.log('📌 Pasted node:', newNode.data.label)
-  recordHistory()  // 記錄歷史
+  recordHistory()
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  // Check if user is typing in an input/textarea (except search box)
-  const target = e.target as HTMLElement
-  const isSearchInput = target.classList.contains('search-input')
-
-  // Allow ESC in search to close it
-  if (showSearch.value && e.key === 'Escape') {
-    e.preventDefault()
-    closeSearch()
-    return
-  }
-
-  // Allow arrow keys and Enter in search
-  if (showSearch.value && isSearchInput) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      selectNextResult()
-      return
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selectPrevResult()
-      return
-    } else if (e.key === 'Enter' && searchResults.value.length > 0) {
-      e.preventDefault()
-      const selectedNode = searchResults.value[selectedResultIndex.value]
-      if (selectedNode) {
-        jumpToNode(selectedNode.id)
-        closeSearch()
-      }
-      return
-    }
-    return
-  }
-
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
-
-  // Open search with '/' key
-  if (e.key === '/') {
-    e.preventDefault()
-    openSearch()
-    return
-  }
-
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-  const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey
-
-  // Undo: Ctrl+Z (Windows) / Cmd+Z (Mac)
-  if (ctrlOrCmd && e.key === 'z' && !e.shiftKey) {
-    e.preventDefault()
-    if (canUndo.value) {
-      undo()
-      showUndoRedoToast('↩️ 復原')
-    }
-    return
-  }
-
-  // Redo: Ctrl+Shift+Z (Windows) / Cmd+Shift+Z (Mac) or Ctrl+Y (Windows)
-  if ((ctrlOrCmd && e.shiftKey && e.key === 'z') || (ctrlOrCmd && e.key === 'y')) {
-    e.preventDefault()
-    if (canRedo.value) {
-      redo()
-      showUndoRedoToast('↪️ 重做')
-    }
-    return
-  }
-
-  if (ctrlOrCmd && e.key === 'c') {
-    e.preventDefault()
-    copyNode()
-  } else if (ctrlOrCmd && e.key === 'v') {
-    e.preventDefault()
-    pasteNode()
-  } else if (e.key === 'd' || e.key === 'D') {
-    // Toggle disabled state for selected node
-    e.preventDefault()
-    toggleNodeDisabled()
-  }
+function applyAutoLayout() {
+  const layoutedNodes = autoLayout(nodes.value, edges.value, 'LR')
+  nodes.value = layoutedNodes
+  recordHistory()
+  showUndoRedoToast('✨ 自動排版完成')
 }
 
-function showUndoRedoToast(message: string) {
-  const toast = document.createElement('div')
-  toast.textContent = message
-  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);color:var(--text-primary);padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10000;animation:toast-in 0.2s ease;border:1px solid var(--border);'
-  document.body.appendChild(toast)
-  setTimeout(() => toast.remove(), 1000)
+// Retry failed node
+function handleRetryNode(nodeId: string) {
+  const nodeExec = executionStore.getNodeExecution(nodeId)
+  if (!nodeExec) return
+  executionStore.updateNodeStatus(nodeId, 'pending', {
+    error: undefined, completedAt: undefined, duration: undefined
+  })
+  showUndoRedoToast(`🔄 ${nodeId} 已重置，請重新執行工作流`)
 }
 
-function toggleNodeDisabled() {
-  if (!selectedNodeId.value) return
-  const node = nodes.value.find(n => n.id === selectedNodeId.value)
-  if (!node) return
-
-  // Toggle disabled state
-  node.data.disabled = !node.data.disabled
-
-  const status = node.data.disabled ? '🚫 已停用' : '✅ 已啟用'
-  console.log(`${status}: ${node.data.label}`)
-}
-
-// Watch search panel to auto-focus input
-watch(showSearch, (value) => {
-  if (value) {
-    setTimeout(() => searchInputRef.value?.focus(), 100)
-  }
-})
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
-  // 初始化歷史記錄（延遲一點確保 nodes/edges 已載入）
-  setTimeout(() => initHistory(), 100)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-})
-
-// Properties panel
-const selectedNodeId = ref<string | null>(null)
-const selectedEdgeId = ref<string | null>(null)
-const selectedDef = computed(() => {
-  const node = nodes.value.find(n => n.id === selectedNodeId.value)
-  return node ? getNodeDef(node.data.nodeType) : null
-})
-const customConfigComponent = computed(() => {
-  const name = selectedDef.value?.customConfig
-  return name ? CUSTOM_CONFIG_MAP[name] : null
-})
-const nodeData = ref<Record<string, any>>({})
-
-// ── Connection handler — REQUIRED for edge drag to work ──────────────────
+// Connection & change handlers
 function onConnect(connection: Connection) {
   edges.value = addEdge({ ...connection, animated: true }, edges.value)
-  recordHistory()  // 記錄歷史
+  recordHistory()
 }
 
 function onEdgesChange(changes: any[]) {
-  // Handle edge changes (remove, add, update)
   let hasChanges = false
   changes.forEach(change => {
     if (change.type === 'remove') {
@@ -977,115 +344,58 @@ function onEdgesChange(changes: any[]) {
       hasChanges = true
     }
   })
-  if (hasChanges) recordHistory()  // 記錄歷史
+  if (hasChanges) recordHistory()
 }
 
 function onNodesChange(changes: any[]) {
-  // Handle node changes (remove, position, etc.)
   let hasRemoval = false
   changes.forEach(change => {
     if (change.type === 'remove') {
       hasRemoval = true
-      // 同時刪除相關的邊
       edges.value = edges.value.filter(e => e.source !== change.id && e.target !== change.id)
     }
   })
-  if (hasRemoval) recordHistory()  // 記錄歷史（節點刪除）
+  if (hasRemoval) recordHistory()
 }
 
-function onNodeClick({ node, event }: { node: Node; event: MouseEvent }) {
+// Selection handlers
+function onNodeClick({ node }: { node: Node; event: MouseEvent }) {
   selectedNodeId.value = node.id
-  selectedEdgeId.value = null  // Clear edge selection when selecting node
+  selectedEdgeId.value = null
   const def = getNodeDef(node.data.nodeType)
   const defaults: Record<string, any> = {}
   def?.inputs?.forEach(f => { defaults[f.key] = node.data.config?.[f.key] ?? f.default ?? '' })
-  nodeData.value = { ...defaults, ...node.data.config }
+  const data = { ...defaults, ...node.data.config }
 
-  // 🆕 自動檢查快取：如果勾選了「使用快取」但沒有快取數據，自動取消勾選
-  if (nodeData.value.useCachedResult && !nodeCacheStore.hasCache(node.id)) {
+  if (data.useCachedResult && !nodeCacheStore.hasCache(node.id)) {
     console.log(`[Cache] 節點 ${node.id} 沒有快取，自動取消「使用快取結果」`)
-    nodeData.value.useCachedResult = false
-    // 同步更新到節點配置
-    setTimeout(() => updateNodeConfig(), 0)
+    data.useCachedResult = false
+    setTimeout(() => { onPropsUpdateConfig(node.id, data) }, 0)
   }
+
+  propsPanelRef.value?.setNodeData(data)
 }
 
 function onEdgeClick({ edge }: { edge: Edge }) {
   selectedEdgeId.value = edge.id
-  selectedNodeId.value = null  // Clear node selection when selecting edge
+  selectedNodeId.value = null
 }
 
 function onPaneClick() {
-  // Clear all selections when clicking on empty canvas
   selectedNodeId.value = null
   selectedEdgeId.value = null
 }
 
 function onCustomConfigUpdate(newConfig: Record<string, any>) {
-  nodeData.value = newConfig
   const node = nodes.value.find(n => n.id === selectedNodeId.value)
   if (node) node.data = { ...node.data, config: { ...newConfig } }
-
-  // Auto-save after custom config update
-  setTimeout(() => {
-    store.saveWorkflow(wfId, nodes.value, edges.value)
-  }, 100)
+  setTimeout(() => { store.saveWorkflow(wfId, nodes.value, edges.value) }, 100)
 }
 
-// Compute hiddenPorts from generic nodeData for PortVisibilityEditor
-const hiddenPortsFromConfig = computed<string[]>(() => {
-  try { return JSON.parse(nodeData.value.hiddenPorts ?? '[]') } catch { return [] }
-})
-
-// Compute inputOrder from generic nodeData for PortVisibilityEditor
-const inputOrderFromConfig = computed<string[]>(() => {
-  try { return JSON.parse(nodeData.value.inputOrder ?? '[]') } catch { return [] }
-})
-
-// Compute outputOrder from generic nodeData for PortVisibilityEditor
-const outputOrderFromConfig = computed<string[]>(() => {
-  try { return JSON.parse(nodeData.value.outputOrder ?? '[]') } catch { return [] }
-})
-
-// Input ports that can appear as connection handles (no password / select types)
-const portableInputs = computed(() =>
-  (selectedDef.value?.inputs || []).filter(f =>
-    ['string', 'url', 'number', 'textarea', 'object'].includes(f.type)
-  )
-)
-
-function onGenericHiddenPortsUpdate(hp: string[]) {
-  nodeData.value = { ...nodeData.value, hiddenPorts: JSON.stringify(hp) }
-  updateNodeConfig()
+function onPropsUpdateConfig(nodeId: string, config: Record<string, any>) {
+  updateNode(nodeId, (node) => ({ ...node, data: { ...node.data, config: { ...config } } }))
+  setTimeout(() => { store.saveWorkflow(wfId, nodes.value, edges.value) }, 100)
 }
-
-function onInputOrderUpdate(order: string[]) {
-  nodeData.value = { ...nodeData.value, inputOrder: JSON.stringify(order) }
-  updateNodeConfig()
-}
-
-function onOutputOrderUpdate(order: string[]) {
-  nodeData.value = { ...nodeData.value, outputOrder: JSON.stringify(order) }
-  updateNodeConfig()
-}
-
-function updateNodeConfig() {
-  if (!selectedNodeId.value) return
-
-  // Update using VueFlow API
-  updateNode(selectedNodeId.value, (node) => ({
-    ...node,
-    data: { ...node.data, config: { ...nodeData.value } }
-  }))
-
-  // Auto-save
-  setTimeout(() => {
-    store.saveWorkflow(wfId, nodes.value, edges.value)
-  }, 100)
-}
-
-// Watch nodeData for other changes (not from port order/visibility)
-// Removed auto-update here to avoid conflicts with updateNodeConfig()
 
 // Save
 const savedToast = ref(false)
@@ -1098,10 +408,8 @@ function onSave() {
 // Execute
 async function onExecute() {
   try {
-    // 先儲存
     store.saveWorkflow(wfId, nodes.value, edges.value)
 
-    // 🆕 收集快取資料（只收集開啟「使用快取」的節點）
     const nodeCache: Record<string, any> = {}
     for (const node of nodes.value) {
       if (node.data.config?.useCachedResult) {
@@ -1113,26 +421,16 @@ async function onExecute() {
       }
     }
 
-    // 轉換成執行格式
     const workflow: Workflow = {
       id: wfId,
       name: wf.value?.name || 'Untitled',
       nodes: nodes.value.map(n => ({
-        id: n.id,
-        type: n.data.nodeType,  // 真正的節點類型存在 data.nodeType
-        position: n.position,
-        data: {
-          ...(n.data.config || {}),  // 配置項
-          disabled: n.data.disabled,  // 停用狀態（重要！）
-          useCachedResult: n.data.config?.useCachedResult  // 快取標記
-        }
+        id: n.id, type: n.data.nodeType, position: n.position,
+        data: { ...(n.data.config || {}), disabled: n.data.disabled, useCachedResult: n.data.config?.useCachedResult }
       })),
       edges: edges.value.map(e => ({
-        id: e.id,
-        source: e.source,
-        sourceHandle: e.sourceHandle || '',
-        target: e.target,
-        targetHandle: e.targetHandle || ''
+        id: e.id, source: e.source, sourceHandle: e.sourceHandle || '',
+        target: e.target, targetHandle: e.targetHandle || ''
       }))
     }
 
@@ -1144,149 +442,32 @@ async function onExecute() {
 }
 
 function nodeColor(node: Node) {
-  // 檢查節點執行狀態
   const nodeExec = executionStore.getNodeExecution(node.id)
-
   if (nodeExec) {
     switch (nodeExec.status) {
-      case 'running':
-        return '#3b82f6'  // 藍色（執行中）
-      case 'completed':
-        return '#10b981'  // 綠色（完成）
-      case 'failed':
-        return '#ef4444'  // 紅色（失敗）
-      default:
-        return '#6b7280'  // 灰色（等待中）
+      case 'running': return '#3b82f6'
+      case 'completed': return '#10b981'
+      case 'failed': return '#ef4444'
+      default: return '#6b7280'
     }
   }
-
   return CATEGORY_COLORS[node.data?.category] || '#6b7280'
 }
+
+// Lifecycle
+onMounted(() => {
+  setupKeyboard()
+  setTimeout(() => initHistory(), 100)
+})
+
+onUnmounted(() => {
+  teardownKeyboard()
+})
 </script>
 
 <style scoped>
 .editor-layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 56px); }
-
-.palette {
-  width: 220px; flex-shrink: 0;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border);
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
-.workflow-settings {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-.workflow-settings-header {
-  padding: 10px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  border-bottom: 1px solid var(--border);
-}
-.workflow-settings-body {
-  padding: 12px;
-}
-.form-group-compact {
-  margin-bottom: 12px;
-}
-.form-group-compact:last-child {
-  margin-bottom: 0;
-}
-.form-label-sm {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-.form-select-sm {
-  width: 100%;
-  padding: 6px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-}
-.form-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  line-height: 1.4;
-}
-.trigger-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.trigger-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-.trigger-order-input {
-  width: 40px;
-  padding: 4px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-.trigger-icon {
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.trigger-name {
-  font-size: 11px;
-  color: var(--text-secondary);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.palette-search { padding: 12px; border-bottom: 1px solid var(--border); }
-.palette-body { flex: 1; overflow-y: auto; padding: 8px; }
-.palette-cat-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 8px 4px; }
-.palette-node {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px; border-radius: var(--radius-sm);
-  cursor: grab; transition: var(--transition);
-  margin-bottom: 2px;
-}
-.palette-node:hover { background: var(--bg-hover); }
-.palette-node:active { cursor: grabbing; }
-.palette-node-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-.palette-node-name { font-size: 12px; font-weight: 500; color: var(--text-primary); }
-.palette-node-desc { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
-
 .canvas-area { flex: 1; position: relative; }
-
-.props-panel {
-  width: 280px; flex-shrink: 0;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border);
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
-.props-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.props-title { font-size: 14px; font-weight: 600; }
-.props-body { flex: 1; overflow-y: auto; padding: 16px; }
 
 .save-toast {
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -1295,124 +476,8 @@ function nodeColor(node: Node) {
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 
-.slide-right-enter-active, .slide-right-leave-active { transition: all 0.25s ease; }
-.slide-right-enter-from, .slide-right-leave-to { transform: translateX(100%); opacity: 0; }
 .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
-
-/* Execution Panel */
-.execution-panel {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  max-height: 250px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-}
-
-.execution-header {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-base);
-}
-
-.execution-status {
-  font-size: 14px;
-}
-
-.execution-status.running { animation: pulse 2s infinite; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.execution-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-}
-
-.execution-node {
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.execution-node-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.execution-node-status {
-  font-size: 12px;
-}
-
-.execution-progress {
-  position: relative;
-  height: 18px;
-  background: var(--bg-hover);
-  border-radius: 9px;
-  margin: 6px 0;
-  overflow: hidden;
-}
-
-.execution-progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
-  transition: width 0.3s ease;
-}
-
-.execution-progress-text {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.execution-logs {
-  margin-top: 6px;
-}
-
-.execution-log {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: 'Courier New', monospace;
-  padding: 2px 0;
-}
-
-.execution-error {
-  font-size: 11px;
-  color: var(--red);
-  margin-top: 4px;
-  padding: 6px 8px;
-  background: rgba(239, 68, 68, 0.1);
-  border-radius: var(--radius-sm);
-}
-
-.slide-up-enter-active, .slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-up-enter-from, .slide-up-leave-to {
-  transform: translateY(100%);
-  opacity: 0;
-}
 
 /* Edge highlighting styles */
 :deep(.vue-flow__edge.edge-highlighted path) {
@@ -1442,486 +507,8 @@ function nodeColor(node: Node) {
   opacity: 0.3;
 }
 
-/* Cache control */
-.cache-control {
-  padding: 12px;
-  background: var(--bg-elevated);
-  border-radius: 6px;
-}
-.cache-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-.cache-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-/* Toggle switch */
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-}
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--bg-card);
-  border: 1.5px solid var(--border);
-  transition: 0.3s;
-  border-radius: 20px;
-}
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 12px;
-  width: 12px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-muted);
-  transition: 0.3s;
-  border-radius: 50%;
-}
-input:checked + .slider {
-  background-color: rgba(0, 255, 0, 0.2);
-  border-color: lime;
-}
-input:checked + .slider:before {
-  transform: translateX(16px);
-  background-color: lime;
-}
-input:disabled + .slider {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Workflow name editing */
-.topbar-title-input {
-  background: var(--bg-elevated);
-  border: 1px solid var(--accent-cyan);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  outline: none;
-  min-width: 200px;
-}
-
-/* Copy button */
-.btn-copy {
-  background: transparent;
-  border: none;
-  padding: 4px 8px;
-  font-size: 14px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-.btn-copy:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 @keyframes toast-in {
-  from {
-    transform: translateY(-20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/* Script Result Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  backdrop-filter: blur(4px);
-}
-
-.script-modal {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  width: 90%;
-  max-width: 800px;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.script-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base);
-  border-radius: 12px 12px 0 0;
-}
-
-.script-modal-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.script-modal-icon {
-  font-size: 20px;
-}
-
-.script-modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.script-keywords {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.keywords-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.keyword-tag {
-  background: rgba(0, 255, 255, 0.15);
-  color: var(--accent-cyan);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.script-content {
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  overflow-x: auto;
-}
-
-.script-content pre {
-  margin: 0;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.script-modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-base);
-  border-radius: 0 0 12px 12px;
-}
-
-.script-timestamp {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.script-actions {
-  display: flex;
-  gap: 10px;
-}
-
-/* Modal transition */
-.modal-enter-active,
-.modal-leave-active {
-  transition: all 0.3s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-from .script-modal,
-.modal-leave-to .script-modal {
-  transform: scale(0.95) translateY(20px);
-}
-
-/* Node Search Panel */
-.search-panel {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 600px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.search-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base);
-}
-
-.search-input {
-  flex: 1;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--text-primary);
-  outline: none;
-}
-
-.search-input:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.1);
-}
-
-.search-results {
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.search-empty {
-  padding: 32px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.search-result-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: var(--transition);
-  margin-bottom: 4px;
-}
-
-.search-result-item:hover {
-  background: var(--bg-hover);
-}
-
-.search-result-item.active {
-  background: rgba(0, 255, 255, 0.1);
-  border: 1px solid var(--accent-cyan);
-}
-
-.search-result-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.search-result-content {
-  flex: 1;
-}
-
-.search-result-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 2px;
-}
-
-.search-result-type {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.search-enter-active,
-.search-leave-active {
-  transition: all 0.2s ease;
-}
-
-.search-enter-from,
-.search-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-10px);
-}
-
-/* Execution Stats Panel */
-.execution-stats-panel {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  width: 360px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  z-index: 90;
-  overflow: hidden;
-}
-
-.stats-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--border);
-}
-
-.stats-icon {
-  font-size: 16px;
-}
-
-.stats-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.stats-body {
-  padding: 16px;
-}
-
-.stats-summary {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.stat-item {
-  text-align: center;
-  padding: 12px;
-  background: var(--bg-elevated);
-  border-radius: 8px;
-}
-
-.stat-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.stat-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--accent-cyan);
-}
-
-.slowest-nodes {
-  margin-top: 16px;
-}
-
-.slowest-header {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-  padding-left: 4px;
-}
-
-.slowest-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.slowest-node-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg-elevated);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.slowest-node-item:hover {
-  background: var(--bg-hover);
-  transform: translateX(2px);
-}
-
-.slowest-rank {
-  font-size: 11px;
-  font-weight: 700;
-  color: orange;
-  width: 24px;
-}
-
-.slowest-node-id {
-  flex: 1;
-  font-size: 11px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slowest-duration {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: all 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>
