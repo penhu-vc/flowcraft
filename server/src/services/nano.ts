@@ -14,7 +14,7 @@ import { randomUUID } from 'crypto'
 
 type NanoMode = 'apiKey' | 'gcp'
 type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
-type SourceMode = 'text' | 'edit' | 'reference'
+type SourceMode = 'text' | 'edit' | 'reference' | 'outpaint'
 
 export interface NanoInlineAsset {
   base64Data: string
@@ -158,7 +158,7 @@ function buildContents(payload: NanoGenerationRequest) {
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = []
 
   // Add source image(s) first
-  if (payload.sourceMode === 'edit' && payload.image) {
+  if ((payload.sourceMode === 'edit' || payload.sourceMode === 'outpaint') && payload.image) {
     parts.push({
       inlineData: {
         mimeType: payload.image.mimeType,

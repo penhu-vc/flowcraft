@@ -221,7 +221,11 @@
       <!-- Generating overlay -->
       <div v-if="submitting" class="generating-overlay">
         <div class="generating-spinner" />
-        <div class="generating-text">圖片生成中，請稍候...</div>
+        <div v-if="form.sourceMode === 'outpaint'" class="generating-steps">
+          <div class="generating-text">🔍 Step 1: AI 分析原圖內容...</div>
+          <div class="generating-text">🎨 Step 2: 根據分析結果擴圖中...</div>
+        </div>
+        <div v-else class="generating-text">圖片生成中，請稍候...</div>
         <div class="generating-progress">
           <div class="generating-progress-bar" />
         </div>

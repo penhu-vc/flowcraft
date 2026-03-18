@@ -160,7 +160,7 @@ async function exportExpandedImage(): Promise<string> {
   return tmpCanvas.toDataURL('image/png')
 }
 
-/** Export the mask: white = areas to fill, black = original image area, feathered edge for blending */
+/** Export the mask with feathered edges for natural AI blending */
 function exportMask(): string {
   const canvas = previewCanvasRef.value
   if (!canvas) return ''
@@ -176,62 +176,58 @@ function exportMask(): string {
   maskCanvas.height = canvasH
   const ctx = maskCanvas.getContext('2d')!
 
-  // Fill entire canvas white (areas to expand)
+  // Fill entire canvas white (areas AI will generate)
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvasW, canvasH)
 
-  // Feather size: ~8% of the shorter image dimension for smooth blending
-  const feather = Math.round(Math.min(drawW, drawH) * 0.08)
+  // Feathered black region for the original image area
+  // Gemini can touch the feathered edge for smooth blending,
+  // but post-composite will paste original back on top to guarantee preservation
+  const feather = Math.round(Math.min(drawW, drawH) * 0.06)
 
-  // Fill original image area black, with feathered edges via gradients
-  // Core area (fully black, fully preserved)
+  // Core black area
   ctx.fillStyle = '#000000'
-  ctx.fillRect(drawX + feather, drawY + feather, drawW - feather * 2, drawH - feather * 2)
+  ctx.fillRect(drawX, drawY, drawW, drawH)
 
-  // Top edge gradient (white → black)
-  const gradTop = ctx.createLinearGradient(0, drawY, 0, drawY + feather)
+  // Feathered edges: gradient from black to white OUTSIDE the original area
+  // Top
+  const gradTop = ctx.createLinearGradient(0, drawY - feather, 0, drawY)
   gradTop.addColorStop(0, '#ffffff')
   gradTop.addColorStop(1, '#000000')
   ctx.fillStyle = gradTop
-  ctx.fillRect(drawX + feather, drawY, drawW - feather * 2, feather)
+  ctx.fillRect(drawX, drawY - feather, drawW, feather)
 
-  // Bottom edge gradient (black → white)
-  const gradBottom = ctx.createLinearGradient(0, drawY + drawH - feather, 0, drawY + drawH)
+  // Bottom
+  const gradBottom = ctx.createLinearGradient(0, drawY + drawH, 0, drawY + drawH + feather)
   gradBottom.addColorStop(0, '#000000')
   gradBottom.addColorStop(1, '#ffffff')
   ctx.fillStyle = gradBottom
-  ctx.fillRect(drawX + feather, drawY + drawH - feather, drawW - feather * 2, feather)
+  ctx.fillRect(drawX, drawY + drawH, drawW, feather)
 
-  // Left edge gradient (white → black)
-  const gradLeft = ctx.createLinearGradient(drawX, 0, drawX + feather, 0)
+  // Left
+  const gradLeft = ctx.createLinearGradient(drawX - feather, 0, drawX, 0)
   gradLeft.addColorStop(0, '#ffffff')
   gradLeft.addColorStop(1, '#000000')
   ctx.fillStyle = gradLeft
-  ctx.fillRect(drawX, drawY + feather, feather, drawH - feather * 2)
+  ctx.fillRect(drawX - feather, drawY, feather, drawH)
 
-  // Right edge gradient (black → white)
-  const gradRight = ctx.createLinearGradient(drawX + drawW - feather, 0, drawX + drawW, 0)
+  // Right
+  const gradRight = ctx.createLinearGradient(drawX + drawW, 0, drawX + drawW + feather, 0)
   gradRight.addColorStop(0, '#000000')
   gradRight.addColorStop(1, '#ffffff')
   ctx.fillStyle = gradRight
-  ctx.fillRect(drawX + drawW - feather, drawY + feather, feather, drawH - feather * 2)
-
-  // Corner gradients (radial, from black center to white edge)
-  const corners = [
-    { cx: drawX + feather, cy: drawY + feather, sx: drawX, sy: drawY },                           // top-left
-    { cx: drawX + drawW - feather, cy: drawY + feather, sx: drawX + drawW - feather, sy: drawY },  // top-right
-    { cx: drawX + feather, cy: drawY + drawH - feather, sx: drawX, sy: drawY + drawH - feather },  // bottom-left
-    { cx: drawX + drawW - feather, cy: drawY + drawH - feather, sx: drawX + drawW - feather, sy: drawY + drawH - feather }, // bottom-right
-  ]
-  for (const c of corners) {
-    const grad = ctx.createRadialGradient(c.cx, c.cy, 0, c.cx, c.cy, feather)
-    grad.addColorStop(0, '#000000')
-    grad.addColorStop(1, '#ffffff')
-    ctx.fillStyle = grad
-    ctx.fillRect(c.sx, c.sy, feather, feather)
-  }
+  ctx.fillRect(drawX + drawW, drawY, feather, drawH)
 
   return maskCanvas.toDataURL('image/png')
+}
+
+/** Get layout info for post-composite (used by parent to paste original back) */
+function getLayout() {
+  return computeLayout(
+    imgNaturalWidth.value,
+    imgNaturalHeight.value,
+    targetNumericRatio.value,
+  )
 }
 
 watch([() => props.image, () => props.targetRatio], () => {
@@ -245,6 +241,7 @@ onMounted(() => {
 defineExpose({
   exportExpandedImage,
   exportMask,
+  getLayout,
 })
 </script>
 

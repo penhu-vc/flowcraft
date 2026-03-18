@@ -260,6 +260,67 @@ async function cropLatestResult(origW: number, origH: number) {
   }
 }
 
+// ── Outpaint: two-step analysis + prompt building ──
+async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, targetRatio: string): Promise<string> {
+  // Step 1: Analyze the image
+  let analysis: Record<string, string> = {}
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: { base64Data: image.base64Data, mimeType: image.mimeType },
+        aspects: ['facial', 'expression', 'pose', 'clothing', 'background', 'lighting', 'color', 'composition'],
+      }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      analysis = data.description || {}
+    }
+  } catch { /* proceed without analysis */ }
+
+  // Step 2: Build dynamic prompt based on analysis
+  const parts: string[] = []
+
+  parts.push(`Outpaint this image: extend the visible scene to ${targetRatio} aspect ratio.`)
+
+  // Face/person instructions (if person detected)
+  const hasPerson = !!(analysis.facial || analysis.expression || analysis.pose)
+  if (hasPerson) {
+    parts.push(
+      'PERSON DETECTED — critical rules:',
+      `- Face: ${analysis.facial || 'as shown'}. Expression: ${analysis.expression || 'as shown'}. Do NOT modify any facial features whatsoever.`,
+      `- Current pose: ${analysis.pose || 'as shown'}. Continue the body naturally with correct human proportions.`,
+      `- Clothing: ${analysis.clothing || 'as shown'}. Extend the same garment seamlessly. Arms should be natural length with hands visible near mid-thigh.`,
+    )
+  }
+
+  // Background instructions
+  if (analysis.background) {
+    parts.push(`Background: ${analysis.background}. Extend this environment naturally and consistently.`)
+  }
+
+  // Lighting & color
+  if (analysis.lighting) {
+    parts.push(`Lighting: ${analysis.lighting}. Match exactly — same direction, intensity, and shadow softness.`)
+  }
+  if (analysis.color) {
+    parts.push(`Color grading: ${analysis.color}. Match the exact color temperature and tint — no shifts.`)
+  }
+
+  // Core rules
+  parts.push(
+    'Keep ALL original pixels unchanged. The result must look like a single photo taken with a wider lens.',
+  )
+
+  // User's custom prompt
+  if (userPrompt) {
+    parts.push(`Additional: ${userPrompt}`)
+  }
+
+  return parts.join(' ')
+}
+
 function switchMode(mode: NanoSourceMode) {
   form.sourceMode = mode
   errorMessage.value = ''
@@ -288,38 +349,23 @@ async function submit() {
     }
     const maskData = maskEditorRef.value?.exportMaskAsBase64() ?? null
 
-    // Outpaint mode: build expanded image + mask, send as edit mode
-    let outpaintImage: NanoInlineAsset | undefined
-    let outpaintMask: { base64Data: string; mimeType: 'image/png' } | undefined
+    // Outpaint mode: Step 1 analyze image, Step 2 targeted outpaint
     let outpaintPrompt = form.prompt
-    if (form.sourceMode === 'outpaint' && outpaintPreviewRef.value) {
-      const expandedData = await outpaintPreviewRef.value.exportExpandedImage()
-      const maskDataOut = outpaintPreviewRef.value.exportMask()
-      if (expandedData && maskDataOut) {
-        outpaintImage = { base64Data: expandedData, mimeType: 'image/png' }
-        outpaintMask = { base64Data: maskDataOut, mimeType: 'image/png' }
-        const userPrompt = form.prompt.trim()
-        const basePrompt = 'Outpaint this image: extend the visible scene beyond the original frame. '
-          + 'If a person or subject is partially visible, naturally continue their body, clothing, and pose. '
-          + 'Match the lighting, color grading, shadows, and atmosphere of the original image exactly. '
-          + 'The result must look like a single photo taken with a wider lens — no visible seams or inconsistencies.'
-        outpaintPrompt = userPrompt
-          ? `${basePrompt} Additional context: ${userPrompt}`
-          : basePrompt
-      }
+    if (form.sourceMode === 'outpaint' && form.image) {
+      outpaintPrompt = await buildOutpaintPrompt(form.image, form.prompt.trim(), form.aspectRatio)
     }
 
     const isOutpaint = form.sourceMode === 'outpaint'
     const payload: NanoGenerationPayload = {
-      sourceMode: isOutpaint ? 'edit' : form.sourceMode,
+      sourceMode: form.sourceMode,
       prompt: isOutpaint ? outpaintPrompt : form.prompt,
       negativePrompt: form.negativePrompt || undefined,
       aspectRatio: form.aspectRatio,
       imageSize: form.imageSize,
       numberOfImages: form.numberOfImages,
       personGeneration: form.personGeneration,
-      image: isOutpaint ? outpaintImage : (form.sourceMode === 'edit' ? form.image : undefined),
-      maskImage: isOutpaint ? outpaintMask : (form.sourceMode === 'edit' && maskData ? { base64Data: maskData, mimeType: 'image/png' } : undefined),
+      image: isOutpaint ? form.image : (form.sourceMode === 'edit' ? form.image : undefined),
+      maskImage: form.sourceMode === 'edit' && maskData ? { base64Data: maskData, mimeType: 'image/png' } : undefined,
       referenceImages: form.sourceMode === 'reference' ? form.referenceImages : undefined,
       uiState,
     }

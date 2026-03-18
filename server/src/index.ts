@@ -746,6 +746,28 @@ app.delete('/api/nano/jobs/:id', (req, res) => {
     res.json({ ok: true })
 })
 
+// Replace a nano job output with composited image (for outpaint post-composite)
+app.post('/api/nano/jobs/:id/replace-output', (req, res) => {
+    const { outputIndex, base64Data } = req.body
+    if (typeof outputIndex !== 'number' || typeof base64Data !== 'string') {
+        return res.status(400).json({ ok: false, error: 'Missing outputIndex or base64Data' })
+    }
+    const job = listNanoJobs().find((j: any) => j.id === req.params.id)
+    if (!job) return res.status(404).json({ ok: false, error: 'Job not found' })
+    const output = job.outputs?.[outputIndex]
+    if (!output?.localPath) return res.status(404).json({ ok: false, error: 'Output not found' })
+    try {
+        const { join } = require('path')
+        const dataDir = join(__dirname, '../data')
+        const filePath = join(dataDir, output.localPath.replace(/^\/?(generated\/)/, '$1'))
+        const raw = base64Data.replace(/^data:[^;]+;base64,/, '')
+        require('fs').writeFileSync(filePath, Buffer.from(raw, 'base64'))
+        res.json({ ok: true })
+    } catch (err: unknown) {
+        res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+})
+
 // 檢查 Gemini 設定狀態（統一入口）
 app.get('/api/settings/gemini/status', (_req, res) => {
     try {

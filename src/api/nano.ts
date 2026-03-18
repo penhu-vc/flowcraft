@@ -87,6 +87,15 @@ export async function deleteNanoJob(jobId: string) {
   return parse<{ ok: true }>(res)
 }
 
+export async function replaceNanoOutput(jobId: string, outputIndex: number, base64Data: string) {
+  const res = await fetch(`${API_ENDPOINTS.nanoJobs}/${jobId}/replace-output`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ outputIndex, base64Data }),
+  })
+  return parse<{ ok: true }>(res)
+}
+
 export async function optimizeNanoPrompt(prompt: string, mode: string = 'text') {
   const res = await fetch(API_ENDPOINTS.nanoOptimizePrompt, {
     method: 'POST',
