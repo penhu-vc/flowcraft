@@ -299,9 +299,13 @@ async function submit() {
         outpaintImage = { base64Data: expandedData, mimeType: 'image/png' }
         outpaintMask = { base64Data: maskDataOut, mimeType: 'image/png' }
         const userPrompt = form.prompt.trim()
+        const basePrompt = 'Outpaint this image: extend the visible scene beyond the original frame. '
+          + 'If a person or subject is partially visible, naturally continue their body, clothing, and pose. '
+          + 'Match the lighting, color grading, shadows, and atmosphere of the original image exactly. '
+          + 'The result must look like a single photo taken with a wider lens — no visible seams or inconsistencies.'
         outpaintPrompt = userPrompt
-          ? `Extend the image naturally, filling the masked areas with coherent scenery that matches the original image's style and content. ${userPrompt}`
-          : 'Extend the image naturally, filling the masked areas with coherent scenery that matches the original image\'s style, lighting, and content. The extended areas should blend seamlessly with the original.'
+          ? `${basePrompt} Additional context: ${userPrompt}`
+          : basePrompt
       }
     }
 

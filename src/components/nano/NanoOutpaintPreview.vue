@@ -77,13 +77,18 @@ async function drawPreview() {
   canvas.height = canvasH
   const ctx = canvas.getContext('2d')!
 
-  // Fill background with dark gray
-  ctx.fillStyle = '#1a1a2e'
-  ctx.fillRect(0, 0, canvasW, canvasH)
+  // Fill background with blurred stretched image (matches export)
+  ctx.save()
+  ctx.filter = 'blur(30px)'
+  ctx.drawImage(img, 0, 0, canvasW, canvasH)
+  ctx.restore()
 
-  // Draw purple overlay for AI-fill areas
-  ctx.fillStyle = 'rgba(168, 85, 247, 0.3)'
-  ctx.fillRect(0, 0, canvasW, canvasH)
+  // Purple tint on AI-fill areas (top, bottom, left, right strips)
+  ctx.fillStyle = 'rgba(168, 85, 247, 0.35)'
+  ctx.fillRect(0, 0, canvasW, drawY) // top
+  ctx.fillRect(0, drawY + drawH, canvasW, canvasH - drawY - drawH) // bottom
+  ctx.fillRect(0, drawY, drawX, drawH) // left
+  ctx.fillRect(drawX + drawW, drawY, canvasW - drawX - drawW, drawH) // right
 
   // Draw original image centered
   ctx.drawImage(img, drawX, drawY, drawW, drawH)
@@ -122,7 +127,7 @@ function computeLayout(imgW: number, imgH: number, targetRatio: number) {
   return { canvasW, canvasH, drawX, drawY, drawW: imgW, drawH: imgH }
 }
 
-/** Export the expanded canvas (original image centered on background) as base64 */
+/** Export the expanded canvas with edge-mirrored fill for seamless AI context */
 async function exportExpandedImage(): Promise<string> {
   const canvas = previewCanvasRef.value
   if (!canvas) return ''
@@ -131,47 +136,100 @@ async function exportExpandedImage(): Promise<string> {
   if (!imgSrc) return ''
   const img = await loadImage(imgSrc)
 
-  const tmpCanvas = document.createElement('canvas')
-  tmpCanvas.width = canvas.width
-  tmpCanvas.height = canvas.height
-  const ctx = tmpCanvas.getContext('2d')!
-
-  // Fill with neutral gray (helps AI understand the context)
-  ctx.fillStyle = '#808080'
-  ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height)
-
-  const { drawX, drawY, drawW, drawH } = computeLayout(
+  const { canvasW, canvasH, drawX, drawY, drawW, drawH } = computeLayout(
     imgNaturalWidth.value,
     imgNaturalHeight.value,
     targetNumericRatio.value,
   )
+
+  const tmpCanvas = document.createElement('canvas')
+  tmpCanvas.width = canvasW
+  tmpCanvas.height = canvasH
+  const ctx = tmpCanvas.getContext('2d')!
+
+  // Fill with blurred, stretched version of the image as background context
+  // This gives Gemini natural color/texture context at the boundaries
+  ctx.save()
+  ctx.filter = 'blur(30px)'
+  ctx.drawImage(img, 0, 0, canvasW, canvasH)
+  ctx.restore()
+
+  // Draw original image on top, centered
   ctx.drawImage(img, drawX, drawY, drawW, drawH)
 
   return tmpCanvas.toDataURL('image/png')
 }
 
-/** Export the mask: white = areas to fill, black = original image area */
+/** Export the mask: white = areas to fill, black = original image area, feathered edge for blending */
 function exportMask(): string {
   const canvas = previewCanvasRef.value
   if (!canvas) return ''
 
-  const maskCanvas = document.createElement('canvas')
-  maskCanvas.width = canvas.width
-  maskCanvas.height = canvas.height
-  const ctx = maskCanvas.getContext('2d')!
-
-  // Fill entire canvas white (areas to expand)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height)
-
-  // Fill original image area black (keep as is)
-  const { drawX, drawY, drawW, drawH } = computeLayout(
+  const { canvasW, canvasH, drawX, drawY, drawW, drawH } = computeLayout(
     imgNaturalWidth.value,
     imgNaturalHeight.value,
     targetNumericRatio.value,
   )
+
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = canvasW
+  maskCanvas.height = canvasH
+  const ctx = maskCanvas.getContext('2d')!
+
+  // Fill entire canvas white (areas to expand)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvasW, canvasH)
+
+  // Feather size: ~8% of the shorter image dimension for smooth blending
+  const feather = Math.round(Math.min(drawW, drawH) * 0.08)
+
+  // Fill original image area black, with feathered edges via gradients
+  // Core area (fully black, fully preserved)
   ctx.fillStyle = '#000000'
-  ctx.fillRect(drawX, drawY, drawW, drawH)
+  ctx.fillRect(drawX + feather, drawY + feather, drawW - feather * 2, drawH - feather * 2)
+
+  // Top edge gradient (white → black)
+  const gradTop = ctx.createLinearGradient(0, drawY, 0, drawY + feather)
+  gradTop.addColorStop(0, '#ffffff')
+  gradTop.addColorStop(1, '#000000')
+  ctx.fillStyle = gradTop
+  ctx.fillRect(drawX + feather, drawY, drawW - feather * 2, feather)
+
+  // Bottom edge gradient (black → white)
+  const gradBottom = ctx.createLinearGradient(0, drawY + drawH - feather, 0, drawY + drawH)
+  gradBottom.addColorStop(0, '#000000')
+  gradBottom.addColorStop(1, '#ffffff')
+  ctx.fillStyle = gradBottom
+  ctx.fillRect(drawX + feather, drawY + drawH - feather, drawW - feather * 2, feather)
+
+  // Left edge gradient (white → black)
+  const gradLeft = ctx.createLinearGradient(drawX, 0, drawX + feather, 0)
+  gradLeft.addColorStop(0, '#ffffff')
+  gradLeft.addColorStop(1, '#000000')
+  ctx.fillStyle = gradLeft
+  ctx.fillRect(drawX, drawY + feather, feather, drawH - feather * 2)
+
+  // Right edge gradient (black → white)
+  const gradRight = ctx.createLinearGradient(drawX + drawW - feather, 0, drawX + drawW, 0)
+  gradRight.addColorStop(0, '#000000')
+  gradRight.addColorStop(1, '#ffffff')
+  ctx.fillStyle = gradRight
+  ctx.fillRect(drawX + drawW - feather, drawY + feather, feather, drawH - feather * 2)
+
+  // Corner gradients (radial, from black center to white edge)
+  const corners = [
+    { cx: drawX + feather, cy: drawY + feather, sx: drawX, sy: drawY },                           // top-left
+    { cx: drawX + drawW - feather, cy: drawY + feather, sx: drawX + drawW - feather, sy: drawY },  // top-right
+    { cx: drawX + feather, cy: drawY + drawH - feather, sx: drawX, sy: drawY + drawH - feather },  // bottom-left
+    { cx: drawX + drawW - feather, cy: drawY + drawH - feather, sx: drawX + drawW - feather, sy: drawY + drawH - feather }, // bottom-right
+  ]
+  for (const c of corners) {
+    const grad = ctx.createRadialGradient(c.cx, c.cy, 0, c.cx, c.cy, feather)
+    grad.addColorStop(0, '#000000')
+    grad.addColorStop(1, '#ffffff')
+    ctx.fillStyle = grad
+    ctx.fillRect(c.sx, c.sy, feather, feather)
+  }
 
   return maskCanvas.toDataURL('image/png')
 }
