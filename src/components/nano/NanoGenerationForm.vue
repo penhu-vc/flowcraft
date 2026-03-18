@@ -108,6 +108,7 @@
           <input type="file" accept="image/*" hidden @change="onImageUpload" />
         </label>
         <template v-if="form.image">
+          <!-- Target ratio -->
           <div class="outpaint-ratio-bar">
             <span class="outpaint-ratio-label">目標比例</span>
             <div class="outpaint-ratio-options">
@@ -123,6 +124,54 @@
               </button>
             </div>
           </div>
+
+          <!-- Expansion direction -->
+          <div class="outpaint-ratio-bar">
+            <span class="outpaint-ratio-label">擴張方向</span>
+            <div class="outpaint-direction-grid">
+              <button
+                v-for="d in outpaintDirections"
+                :key="d.value"
+                class="outpaint-dir-cell"
+                :class="{ active: outpaintDirection === d.value }"
+                @click="outpaintDirection = d.value"
+                :title="d.label"
+              >{{ d.icon }}</button>
+            </div>
+          </div>
+
+          <!-- Focal length -->
+          <div class="outpaint-ratio-bar">
+            <span class="outpaint-ratio-label">鏡頭焦距</span>
+            <div class="outpaint-ratio-options">
+              <button
+                v-for="f in focalLengths"
+                :key="f.value"
+                class="outpaint-ratio-pill"
+                :class="{ active: outpaintFocal === f.value }"
+                @click="outpaintFocal = f.value"
+              >
+                {{ f.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Filter -->
+          <div class="outpaint-ratio-bar">
+            <span class="outpaint-ratio-label">濾鏡風格</span>
+            <div class="outpaint-ratio-options">
+              <button
+                v-for="f in outpaintFilters"
+                :key="f.value"
+                class="outpaint-ratio-pill"
+                :class="{ active: outpaintFilter === f.value }"
+                @click="outpaintFilter = f.value"
+              >
+                {{ f.label }}
+              </button>
+            </div>
+          </div>
+
           <NanoOutpaintPreview
             ref="outpaintPreviewRef"
             :image="form.image"
@@ -329,6 +378,48 @@ function onMultiAngleSubmit() {
 
 const imagePreview = computed(() => props.form.image?.previewUrl || '')
 
+// ── Outpaint: direction ──
+const outpaintDirection = ref('center')
+const outpaintDirections = [
+  { value: 'top-left', icon: '↖', label: '向左上擴張' },
+  { value: 'top', icon: '↑', label: '向上擴張' },
+  { value: 'top-right', icon: '↗', label: '向右上擴張' },
+  { value: 'left', icon: '←', label: '向左擴張' },
+  { value: 'center', icon: '◉', label: '四周擴張' },
+  { value: 'right', icon: '→', label: '向右擴張' },
+  { value: 'bottom-left', icon: '↙', label: '向左下擴張' },
+  { value: 'bottom', icon: '↓', label: '向下擴張' },
+  { value: 'bottom-right', icon: '↘', label: '向右下擴張' },
+]
+
+// ── Outpaint: focal length ──
+const outpaintFocal = ref('none')
+const focalLengths = [
+  { value: 'none', label: '原始' },
+  { value: '14mm', label: '14mm 超廣角' },
+  { value: '24mm', label: '24mm 廣角' },
+  { value: '35mm', label: '35mm 街拍' },
+  { value: '50mm', label: '50mm 人眼' },
+  { value: '85mm', label: '85mm 人像' },
+  { value: '135mm', label: '135mm 長焦' },
+  { value: 'fisheye', label: '🐟 魚眼' },
+]
+
+// ── Outpaint: filter ──
+const outpaintFilter = ref('none')
+const outpaintFilters = [
+  { value: 'none', label: '原始' },
+  { value: 'vivid', label: '🌈 鮮豔' },
+  { value: 'dramatic', label: '🎭 戲劇' },
+  { value: 'mono', label: '⬛ 黑白' },
+  { value: 'noir', label: '🎬 黑色電影' },
+  { value: 'vintage', label: '📷 復古底片' },
+  { value: 'warm', label: '🔥 暖色調' },
+  { value: 'cool', label: '❄️ 冷色調' },
+  { value: 'film', label: '🎞️ 膠片感' },
+  { value: 'cinematic', label: '🎥 電影感' },
+]
+
 const outpaintRatios = [
   { value: '9:16' as const, label: '9:16', icon: '📱' },
   { value: '16:9' as const, label: '16:9', icon: '🖥️' },
@@ -478,6 +569,9 @@ async function onEditDropAsset(e: DragEvent) {
 defineExpose({
   maskEditorRef,
   outpaintPreviewRef,
+  outpaintDirection,
+  outpaintFocal,
+  outpaintFilter,
 })
 </script>
 
@@ -593,6 +687,39 @@ defineExpose({
 
 .outpaint-ratio-icon {
   font-size: 13px;
+}
+
+.outpaint-direction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 4px;
+}
+
+.outpaint-dir-cell {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+  padding: 0;
+}
+
+.outpaint-dir-cell:hover {
+  border-color: rgba(168, 85, 247, 0.4);
+  color: var(--text-primary);
+}
+
+.outpaint-dir-cell.active {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(168, 85, 247, 0.18);
+  color: var(--text-primary);
 }
 
 /* Generating overlay */

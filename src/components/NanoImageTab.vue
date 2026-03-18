@@ -86,6 +86,9 @@ const generationFormRef = ref<InstanceType<typeof NanoGenerationForm> | null>(nu
 // ── Computed accessor for mask editor & outpaint preview (nested in generation form) ──
 const maskEditorRef = computed(() => generationFormRef.value?.maskEditorRef ?? null)
 const outpaintPreviewRef = computed(() => generationFormRef.value?.outpaintPreviewRef ?? null)
+const outpaintDirection = computed(() => generationFormRef.value?.outpaintDirection ?? 'center')
+const outpaintFocal = computed(() => generationFormRef.value?.outpaintFocal ?? 'none')
+const outpaintFilter = computed(() => generationFormRef.value?.outpaintFilter ?? 'none')
 
 // ── Source Modes ──
 const sourceModes = [
@@ -261,7 +264,7 @@ async function cropLatestResult(origW: number, origH: number) {
 }
 
 // ── Outpaint: two-step analysis + prompt building ──
-async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, targetRatio: string): Promise<string> {
+async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, targetRatio: string, direction: string = 'center', focal: string = 'none', filter: string = 'none'): Promise<string> {
   // Step 1: Analyze the image
   let analysis: Record<string, string> = {}
   try {
@@ -270,7 +273,7 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         image: { base64Data: image.base64Data, mimeType: image.mimeType },
-        aspects: ['facial', 'expression', 'pose', 'clothing', 'background', 'lighting', 'color', 'composition', 'skintone', 'bodytype'],
+        aspects: ['facial', 'expression', 'pose', 'clothing', 'background', 'lighting', 'color', 'composition', 'skintone', 'bodytype', 'hands', 'text_and_logos', 'depth_of_field', 'ground_surface', 'edge_objects'],
       }),
     })
     if (res.ok) {
@@ -283,6 +286,58 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
   const parts: string[] = []
 
   parts.push(`Outpaint this image: extend the visible scene to ${targetRatio} aspect ratio.`)
+
+  // Direction instruction
+  // Direction values represent WHERE to expand (user's perspective)
+  // So 'right' = expand to the right = original stays on the left side
+  const directionMap: Record<string, string> = {
+    'center': 'The original image is centered — extend equally in all directions.',
+    'right': 'Extend the scene primarily to the RIGHT. The original content stays on the left side of the frame.',
+    'left': 'Extend the scene primarily to the LEFT. The original content stays on the right side of the frame.',
+    'bottom': 'Extend the scene primarily DOWNWARD. The original content stays at the top of the frame.',
+    'top': 'Extend the scene primarily UPWARD. The original content stays at the bottom of the frame.',
+    'bottom-right': 'Extend the scene to the BOTTOM-RIGHT. The original content stays in the top-left area.',
+    'bottom-left': 'Extend the scene to the BOTTOM-LEFT. The original content stays in the top-right area.',
+    'top-right': 'Extend the scene to the TOP-RIGHT. The original content stays in the bottom-left area.',
+    'top-left': 'Extend the scene to the TOP-LEFT. The original content stays in the bottom-right area.',
+  }
+  if (direction && directionMap[direction]) {
+    parts.push(directionMap[direction])
+  }
+
+  // Focal length instruction
+  if (focal && focal !== 'none') {
+    const focalMap: Record<string, string> = {
+      '14mm': 'Shot with a 14mm ultra-wide lens — dramatic perspective distortion, exaggerated depth, wide field of view.',
+      '24mm': 'Shot with a 24mm wide-angle lens — spacious feel, moderate perspective distortion, great sense of environment.',
+      '35mm': 'Shot with a 35mm lens — classic street photography perspective, natural wide view, minimal distortion.',
+      '50mm': 'Shot with a 50mm standard lens — closest to human eye perspective, natural proportions, no distortion.',
+      '85mm': 'Shot with an 85mm portrait lens — slight background compression, pleasing bokeh, flattering perspective for faces.',
+      '135mm': 'Shot with a 135mm telephoto lens — strong background compression, creamy bokeh, intimate feel, flattened perspective.',
+      'fisheye': 'Shot with a fisheye lens — extreme barrel distortion, 180-degree field of view, curved lines, creative and dramatic effect.',
+    }
+    if (focalMap[focal]) {
+      parts.push(`LENS SIMULATION: ${focalMap[focal]}`)
+    }
+  }
+
+  // Filter/style instruction
+  if (filter && filter !== 'none') {
+    const filterMap: Record<string, string> = {
+      'vivid': 'Apply vivid/saturated color grading — boost saturation, make colors pop, enhanced contrast.',
+      'dramatic': 'Apply dramatic tone — deep shadows, strong contrast, moody atmosphere, like HDR photography.',
+      'mono': 'Convert to black and white monochrome — rich tonal range, no color, emphasis on light and shadow.',
+      'noir': 'Apply film noir style — high contrast black and white, deep blacks, dramatic shadows, 1940s cinema feel.',
+      'vintage': 'Apply vintage film look — faded colors, slight grain, warm highlights, cool shadows, retro 70s/80s feel.',
+      'warm': 'Apply warm color filter — shift overall tone toward golden/amber warmth, like golden hour sunlight.',
+      'cool': 'Apply cool color filter — shift overall tone toward blue/teal coolness, like overcast daylight.',
+      'film': 'Apply analog film simulation — subtle grain, slightly muted colors, lifted blacks, Kodak Portra-like tones.',
+      'cinematic': 'Apply cinematic color grading — teal and orange split toning, letterbox feel, shallow depth of field impression, Hollywood movie look.',
+    }
+    if (filterMap[filter]) {
+      parts.push(`FILTER STYLE: ${filterMap[filter]}`)
+    }
+  }
 
   // Face/person instructions (if person detected)
   const hasPerson = !!(analysis.facial || analysis.expression || analysis.pose)
@@ -301,17 +356,44 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
     parts.push(`Background: ${analysis.background}. Extend this environment naturally and consistently.`)
   }
 
-  // Lighting & color
+  // Lighting — single source, no invention
   if (analysis.lighting) {
-    parts.push(`Lighting: ${analysis.lighting}. Match exactly — same direction, intensity, and shadow softness.`)
+    parts.push(`Lighting: ${analysis.lighting}. CRITICAL: There is only ONE light source in this image — maintain that same single light source direction and intensity. Do NOT add any new light sources, sun flares, or reflections that don't exist in the original.`)
   }
+
+  // Color — anti red/warm shift
   if (analysis.color) {
-    parts.push(`CRITICAL color grading: ${analysis.color}. You MUST reproduce this exact color temperature, tint, and white balance in the entire output image including all extended areas. Do NOT shift toward blue, warm, or any other tone.`)
+    parts.push(`CRITICAL color grading: ${analysis.color}. Reproduce this EXACT color temperature and white balance across the entire output. Do NOT shift toward red, warm, blue, or any other tone. If the original is slightly green-tinted, the output must also be slightly green-tinted.`)
+  }
+
+  // Hands — correct finger count
+  if (analysis.hands && analysis.hands !== '不可見') {
+    parts.push(`Hands: ${analysis.hands}. If hands are extended into new areas, they MUST have exactly 5 fingers each — no extra or missing fingers.`)
+  }
+
+  // Text & logos — no mirroring
+  if (analysis.text_and_logos && analysis.text_and_logos !== '無') {
+    parts.push(`Text/Logos detected: ${analysis.text_and_logos}. Do NOT mirror, reverse, or duplicate any text or logos. Maintain correct reading direction and orientation.`)
+  }
+
+  // Depth of field — consistency
+  if (analysis.depth_of_field) {
+    parts.push(`Depth of field: ${analysis.depth_of_field}. Extended areas must maintain the same focus plane and blur characteristics — if the background is blurry in the original, it must stay blurry in the extension.`)
+  }
+
+  // Ground surface — continuity
+  if (analysis.ground_surface && analysis.ground_surface !== '不可見') {
+    parts.push(`Ground: ${analysis.ground_surface}. Extend the same material and texture seamlessly — no sudden changes in flooring or surface pattern.`)
+  }
+
+  // Edge objects — complete them
+  if (analysis.edge_objects && analysis.edge_objects !== '無') {
+    parts.push(`Edge objects: ${analysis.edge_objects}. These partially visible objects at the image edges must be completed naturally in the extended area — do not ignore or duplicate them.`)
   }
 
   // Core rules
   parts.push(
-    'Keep ALL original pixels unchanged. The result must look like a single photo taken with a wider lens.',
+    'Keep ALL original pixels unchanged. Do NOT invent new objects or light sources. The result must look like a single photo taken with a wider lens.',
   )
 
   // User's custom prompt
@@ -353,7 +435,10 @@ async function submit() {
     // Outpaint mode: Step 1 analyze image, Step 2 targeted outpaint
     let outpaintPrompt = form.prompt
     if (form.sourceMode === 'outpaint' && form.image) {
-      outpaintPrompt = await buildOutpaintPrompt(form.image, form.prompt.trim(), form.aspectRatio)
+      outpaintPrompt = await buildOutpaintPrompt(
+        form.image, form.prompt.trim(), form.aspectRatio,
+        outpaintDirection.value, outpaintFocal.value, outpaintFilter.value,
+      )
     }
 
     const isOutpaint = form.sourceMode === 'outpaint'

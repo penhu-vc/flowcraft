@@ -334,9 +334,14 @@ export async function describeImage(
     pose: '動作/姿勢（身體姿態、手勢）',
     clothing: '服裝（衣物、配件、風格）',
     background: '背景/場景（環境、地點、物件）',
-    lighting: '光線（光源方向、明暗、色溫）',
+    lighting: '光線（光源方向、數量、明暗、色溫）',
     composition: '構圖（鏡頭角度、景深、裁切）',
     color: '色調（整體色彩傾向、對比度）',
+    hands: '手部（手指數量、手勢、手的位置，如果看不到手請回答「不可見」）',
+    text_and_logos: '文字與標誌（圖中是否有文字、Logo、品牌標誌，如果沒有請回答「無」）',
+    depth_of_field: '景深（前景/背景的模糊程度、焦點位置）',
+    ground_surface: '地面材質（地板、草地、道路等材質與紋理，如果看不到地面請回答「不可見」）',
+    edge_objects: '邊緣物件（圖片邊緣是否有被截斷的物件，描述其位置與類型，如果沒有請回答「無」）',
   }
 
   const prompt = `Analyze this image and describe it in detail. Output a JSON object with these keys, each value is a concise Chinese description (1-2 sentences):
