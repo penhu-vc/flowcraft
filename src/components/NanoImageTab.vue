@@ -20,6 +20,7 @@
       :optimizer-disabled="optimizerRef?.optimizing"
       :pending-restored-mask="pendingRestoredMask"
       @submit="submit"
+      @submit-multi-angle="submitMultiAngle"
       @switch-mode="switchMode"
       @image-uploaded="onImageUploaded"
       @one-click-remove="oneClickRemove"
@@ -335,6 +336,84 @@ async function submit() {
     const idx = jobs.value.findIndex(j => j.id === placeholderId)
     if (idx >= 0) jobs.value.splice(idx, 1, job)
     else jobs.value.unshift(job)
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    submitting.value = false
+  }
+}
+
+// ── Multi-angle submit ──
+async function submitMultiAngle(shots: { key: string; label: string; extraPrompt: string; refImage: NanoInlineAsset | null }[]) {
+  submitting.value = true
+  errorMessage.value = ''
+  const basePrompt = form.prompt.trim()
+
+  try {
+    const uiState: NanoUiStateSnapshot = {
+      optimizerMode: optimizerRef.value?.optimizerMode || form.sourceMode,
+      optimizerInput: optimizerRef.value?.optimizerInput || '',
+      optimizeResult: optimizerRef.value?.optimizeResult ? { ...optimizerRef.value.optimizeResult } : null,
+      refDescriptions: [...refDescriptions.value],
+    }
+
+    for (const shot of shots) {
+      // Step 1: AI describe 參考圖（若有）
+      let refDescription = ''
+      if (shot.refImage) {
+        try {
+          const descRes = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: shot.refImage.base64Data,
+              mimeType: shot.refImage.mimeType,
+              aspects: ['pose', 'clothing', 'expression', 'lighting', 'background'],
+            }),
+          })
+          if (descRes.ok) {
+            const descData = await descRes.json()
+            // 把各 aspect 的描述串成一段文字
+            const parts = Object.values(descData.description || {}).filter(Boolean)
+            if (parts.length) refDescription = parts.join(', ')
+          }
+        } catch { /* 描述失敗就跳過，不影響生成 */ }
+      }
+
+      // Step 2: 組合 prompt
+      const parts = [basePrompt, shot.extraPrompt, refDescription].filter(Boolean)
+      const prompt = parts.join('. ')
+
+      // Step 3: 生成
+      const payload: NanoGenerationPayload = {
+        sourceMode: shot.refImage ? 'reference' : form.sourceMode,
+        prompt,
+        negativePrompt: form.negativePrompt || undefined,
+        aspectRatio: form.aspectRatio,
+        imageSize: form.imageSize,
+        numberOfImages: 1,
+        personGeneration: form.personGeneration,
+        image: !shot.refImage && form.sourceMode === 'edit' ? form.image : undefined,
+        referenceImages: shot.refImage ? [shot.refImage] : (form.sourceMode === 'reference' ? form.referenceImages : undefined),
+        uiState,
+      }
+
+      const placeholderId = `placeholder-${Date.now()}-${shot.key}`
+      jobs.value.unshift({
+        id: placeholderId,
+        status: 'running' as const,
+        sourceMode: payload.sourceMode,
+        prompt,
+        createdAt: new Date().toISOString(),
+        outputs: [],
+      } as any)
+      startPolling()
+
+      const { job } = await createNanoJob(payload)
+      const idx = jobs.value.findIndex(j => j.id === placeholderId)
+      if (idx >= 0) jobs.value.splice(idx, 1, job)
+      else jobs.value.unshift(job)
+    }
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : String(err)
   } finally {

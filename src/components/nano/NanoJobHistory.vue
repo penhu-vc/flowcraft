@@ -30,7 +30,13 @@
               <button class="btn btn-danger btn-sm" @click="$emit('remove', job.id)">刪除</button>
             </div>
           </div>
-          <p class="history-prompt">{{ job.prompt }}</p>
+          <!-- Collapsible prompt -->
+          <div class="history-prompt-wrap">
+            <p class="history-prompt" :class="{ collapsed: !expandedPrompts.has(job.id) }">{{ job.prompt }}</p>
+            <button v-if="job.prompt" class="prompt-toggle" @click="togglePrompt(job.id)">
+              {{ expandedPrompts.has(job.id) ? '收合 ▲' : '展開 ▼' }}
+            </button>
+          </div>
           <p v-if="job.error" class="error-text">{{ job.error }}</p>
 
           <div v-if="job.outputs.length > 0" class="image-grid">
@@ -118,6 +124,15 @@ const modeLabelMap: Record<NanoSourceMode, string> = {
 }
 
 const { addAsset, hasAsset } = useAssetLibrary()
+
+// ── Collapsible prompts ──
+const expandedIds = ref<string[]>([])
+const expandedPrompts = { has: (id: string) => expandedIds.value.includes(id) }
+function togglePrompt(id: string) {
+  const idx = expandedIds.value.indexOf(id)
+  if (idx >= 0) expandedIds.value.splice(idx, 1)
+  else expandedIds.value.push(id)
+}
 
 function resolveMediaUrl(path: string) {
   return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
@@ -232,6 +247,38 @@ function onLbMouseDown(e: MouseEvent) {
   justify-content: center;
 }
 
+.history-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.history-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--bg-card, rgba(255,255,255,0.03));
+  display: flex;
+  flex-direction: column;
+}
+.history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.mini-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
 .history-stats {
   display: flex;
   gap: 8px;
@@ -246,6 +293,39 @@ function onLbMouseDown(e: MouseEvent) {
 .stat-running { background: rgba(33, 150, 243, 0.15); color: #64b5f6; }
 .stat-completed { background: rgba(76, 175, 80, 0.15); color: #81c784; }
 .stat-failed { background: rgba(244, 67, 54, 0.15); color: #e57373; }
+
+.history-prompt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.history-prompt {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.history-prompt.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+.prompt-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+}
+.prompt-toggle:hover { opacity: 1; }
 
 .image-grid {
   display: grid;

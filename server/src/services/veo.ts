@@ -244,6 +244,10 @@ function buildGenerationParams(payload: VeoGenerationRequest) {
     if (assetCount > 3) {
       throw new Error('Asset reference 最多三張。')
     }
+
+    if (styleCount > 0 && assetCount > 0) {
+      throw new Error('不能同時混用 Style 和 Asset reference，請只選一種類型。')
+    }
   }
 
   if (payload.sourceMode === 'extend' && !video) {

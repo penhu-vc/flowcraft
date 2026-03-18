@@ -143,12 +143,78 @@
         @run-ref-optimizer="$emit('run-ref-optimizer')"
       />
 
+      <!-- ── 多角度模式 ── -->
+      <div class="multi-angle-section">
+        <div class="multi-angle-header" @click="multiAngle = !multiAngle">
+          <span class="multi-angle-title">
+            <span class="ma-toggle-icon">{{ multiAngle ? '▾' : '▸' }}</span>
+            📐 多角度模式
+          </span>
+          <span class="ma-badge" v-if="multiAngle && angleShots.some(s => s.enabled)">{{ angleShots.filter(s => s.enabled).length }} 個角度 · {{ angleShots.filter(s => s.enabled && s.refImage).length }} 張參考圖</span>
+        </div>
+
+        <div v-if="multiAngle" class="multi-angle-body">
+          <!-- 說明 -->
+          <div class="ma-info-bar">
+            💡 每個角度可選填一張對應的參考圖。生成時 AI 會先分析參考圖，再把描述加入 prompt，讓該角度更精準。
+          </div>
+
+          <!-- 每個角度的卡片 -->
+          <div class="ma-shot-cards">
+            <div
+              v-for="shot in angleShots"
+              :key="shot.key"
+              class="ma-shot-card"
+              :class="{ active: shot.enabled }"
+            >
+              <!-- 左側：勾選 + 名稱 -->
+              <label class="ma-shot-card-label">
+                <input type="checkbox" v-model="shot.enabled" />
+                <span class="ma-shot-icon">{{ shot.icon }}</span>
+                <span>{{ shot.label }}</span>
+              </label>
+              <!-- 右側：參考圖 slot -->
+              <div class="ma-shot-ref">
+                <div v-if="shot.refImage" class="ma-shot-ref-filled">
+                  <img :src="shot.refImage.previewUrl" />
+                  <button class="ma-ref-remove" @click.stop="shot.refImage = null">×</button>
+                </div>
+                <label v-else class="ma-shot-ref-empty" :title="shot.enabled ? '上傳此角度的參考圖（選填）' : '請先啟用此角度'">
+                  <span>{{ shot.enabled ? '+' : '—' }}</span>
+                  <input v-if="shot.enabled" type="file" accept="image/*" hidden @change="onAngleRefUpload($event, shot)" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 朝向設定（無參考圖時的 fallback） -->
+          <div class="ma-facing-row">
+            <span class="ma-facing-label">未提供參考圖的角度，角色朝向：</span>
+            <label class="ma-radio"><input type="radio" v-model="facingMode" value="camera" /> 面向鏡頭</label>
+            <label class="ma-radio"><input type="radio" v-model="facingMode" value="free" /> 不限制</label>
+          </div>
+
+          <div v-if="!angleShots.some(s => s.enabled)" class="ma-warn">請至少啟用一個角度</div>
+        </div>
+      </div>
+
       <div class="submit-row">
-        <p class="hint">
-          {{ submitHint }}
-        </p>
-        <button class="btn btn-primary" :disabled="submitting || !canSubmit" @click="$emit('submit')">
+        <p class="hint">{{ submitHint }}</p>
+        <button
+          v-if="!multiAngle"
+          class="btn btn-primary"
+          :disabled="submitting || !canSubmit"
+          @click="$emit('submit')"
+        >
           {{ submitting ? '生成中...' : '🎨 生成圖片' }}
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          :disabled="submitting || !canSubmit || !angleShots.some(s => s.enabled)"
+          @click="onMultiAngleSubmit"
+        >
+          {{ submitting ? '分析並生成中...' : `📐 生成 ${angleShots.filter(s => s.enabled).length} 個角度` }}
         </button>
       </div>
 
@@ -199,6 +265,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'submit'): void
+  (e: 'submit-multi-angle', shots: { key: string; label: string; extraPrompt: string; refImage: NanoInlineAsset | null }[]): void
   (e: 'switch-mode', mode: NanoSourceMode): void
   (e: 'image-uploaded', asset: NanoInlineAsset, size: { width: number; height: number }, closestRatio: string): void
   (e: 'one-click-remove'): void
@@ -211,6 +278,50 @@ const emit = defineEmits<{
 // ── Sub-component refs ──
 const maskEditorRef = ref<InstanceType<typeof NanoMaskEditor> | null>(null)
 const outpaintPreviewRef = ref<InstanceType<typeof NanoOutpaintPreview> | null>(null)
+
+// ── Multi-angle mode ──
+const multiAngle = ref(false)
+const facingMode = ref<'camera' | 'free'>('camera')
+
+interface AngleShot {
+  key: string
+  icon: string
+  label: string
+  prompt: string
+  enabled: boolean
+  refImage: NanoInlineAsset | null
+}
+
+const angleShots = ref<AngleShot[]>([
+  { key: 'close-up',      icon: '🔍', label: '特寫',   prompt: 'extreme close-up portrait, face and shoulders only', enabled: true,  refImage: null },
+  { key: 'medium',        icon: '🧍', label: '中景',   prompt: 'medium shot, waist-up portrait',                     enabled: true,  refImage: null },
+  { key: 'full-body',     icon: '👤', label: '全身',   prompt: 'full body shot, head to toe, entire figure visible',  enabled: true,  refImage: null },
+  { key: 'three-quarter', icon: '↗️', label: '3/4 側', prompt: 'three-quarter view, slight side angle',              enabled: false, refImage: null },
+  { key: 'side',          icon: '👈', label: '側面',   prompt: 'side profile view',                                  enabled: true,  refImage: null },
+  { key: 'back',          icon: '🔙', label: '背面',   prompt: 'back view, character facing away from camera',        enabled: false, refImage: null },
+  { key: 'low-angle',     icon: '⬆️', label: '仰角',   prompt: 'low angle shot, camera looking up at subject',       enabled: false, refImage: null },
+  { key: 'top-down',      icon: '⬇️', label: '俯角',   prompt: "top-down bird's eye view angle",                    enabled: false, refImage: null },
+])
+
+async function onAngleRefUpload(e: Event, shot: AngleShot) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  shot.refImage = await fileToAsset(file)
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+function onMultiAngleSubmit() {
+  const facing = facingMode.value === 'camera' ? ', character looking directly at camera' : ''
+  const shots = angleShots.value
+    .filter(s => s.enabled)
+    .map(s => ({
+      key: s.key,
+      label: s.label,
+      extraPrompt: s.prompt + (s.refImage ? '' : facing),
+      refImage: s.refImage,
+    }))
+  emit('submit-multi-angle', shots)
+}
 
 const imagePreview = computed(() => props.form.image?.previewUrl || '')
 
@@ -537,4 +648,79 @@ defineExpose({
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
 }
+
+/* ── Multi-angle ── */
+.multi-angle-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.multi-angle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg-card);
+  transition: background 0.15s;
+}
+.multi-angle-header:hover { background: var(--bg-hover); }
+.multi-angle-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.ma-toggle-icon { font-size: 11px; color: var(--text-muted); }
+.ma-badge { font-size: 11px; color: var(--accent); background: rgba(139,92,246,0.15); padding: 2px 8px; border-radius: 20px; }
+.multi-angle-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); }
+.ma-ref-hint {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.2);
+  border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5;
+}
+.ma-ref-hint-icon { font-size: 16px; flex-shrink: 0; }
+.ma-ref-hint-sub { color: var(--text-muted); }
+.ma-info-bar {
+  font-size: 12px; color: var(--text-muted); background: rgba(99,179,237,0.07);
+  border: 1px solid rgba(99,179,237,0.18); border-radius: 8px; padding: 8px 12px; line-height: 1.5;
+}
+.ma-shot-cards { display: flex; flex-wrap: wrap; gap: 6px; }
+.ma-shot-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); opacity: 0.5; transition: all 0.15s;
+  flex: 1 1 calc(50% - 3px); min-width: 140px;
+}
+.ma-shot-card.active { opacity: 1; border-color: var(--accent); background: rgba(139,92,246,0.07); }
+.ma-shot-card-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; cursor: pointer; user-select: none;
+}
+.ma-shot-icon { font-size: 16px; }
+.ma-shot-ref { display: flex; align-items: center; }
+.ma-shot-ref-filled {
+  width: 48px; height: 48px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--border); position: relative; flex-shrink: 0;
+}
+.ma-shot-ref-filled img { width: 100%; height: 100%; object-fit: cover; }
+.ma-ref-remove {
+  position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.6);
+  color: #fff; border: none; border-radius: 50%; width: 16px; height: 16px;
+  font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.ma-shot-ref-empty {
+  width: 48px; height: 48px; border-radius: 6px; border: 1px dashed var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: var(--text-muted); cursor: pointer; transition: border-color 0.15s;
+}
+.ma-shot-card.active .ma-shot-ref-empty:hover { border-color: var(--accent); color: var(--accent); }
+.ma-facing-row { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+.ma-facing-label { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.ma-radio { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.ma-shots-label { font-size: 12px; color: var(--text-muted); }
+.ma-shots-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.ma-shot-pill {
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); transition: all 0.15s;
+}
+.ma-shot-pill.active { border-color: var(--accent); background: rgba(139,92,246,0.15); color: var(--accent); }
+.ma-warn { font-size: 12px; color: #f59e0b; }
 </style>

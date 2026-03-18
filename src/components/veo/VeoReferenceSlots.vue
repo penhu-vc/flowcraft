@@ -3,16 +3,20 @@
     <div class="asset-head">
       <span>參考圖片</span>
       <span class="ref-rule-hint ref-tooltip-wrap">
-        Asset 最多 3 張 · Style 最多 1 張 <span class="hint-icon">?</span>
+        Asset 最多 3 張 · Style 最多 1 張 · 不可混用 <span class="hint-icon">?</span>
         <span class="ref-tooltip">
           <strong>🎯 Asset（素材）</strong><br/>
           告訴 Veo「這個東西長什麼樣子」<br/>
           例：logo 圖、角色臉、產品照片<br/><br/>
           <strong>🎨 Style（風格）</strong><br/>
           告訴 Veo「要這種視覺感覺」<br/>
-          例：賽博龐克風截圖、油畫風格的圖
+          例：賽博龐克風截圖、油畫風格的圖<br/><br/>
+          ⚠️ Asset 和 Style <strong>不能同時使用</strong>
         </span>
       </span>
+    </div>
+    <div v-if="assetCount > 0 && styleCount > 0" class="ref-mix-warning">
+      ⚠️ 不能同時混用 Asset 和 Style，請統一選一種類型
     </div>
     <div class="ref-slots-grid">
       <div
@@ -353,6 +357,15 @@ defineExpose({
 }
 .ref-slot-label {
   font-size: 11px;
+}
+.ref-mix-warning {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-bottom: 8px;
 }
 .ref-slot-wrapper {
   display: flex;
