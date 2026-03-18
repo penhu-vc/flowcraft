@@ -270,7 +270,7 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         image: { base64Data: image.base64Data, mimeType: image.mimeType },
-        aspects: ['facial', 'expression', 'pose', 'clothing', 'background', 'lighting', 'color', 'composition'],
+        aspects: ['facial', 'expression', 'pose', 'clothing', 'background', 'lighting', 'color', 'composition', 'skintone', 'bodytype'],
       }),
     })
     if (res.ok) {
@@ -289,8 +289,9 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
   if (hasPerson) {
     parts.push(
       'PERSON DETECTED — critical rules:',
-      `- Face: ${analysis.facial || 'as shown'}. Expression: ${analysis.expression || 'as shown'}. Do NOT modify any facial features whatsoever.`,
-      `- Current pose: ${analysis.pose || 'as shown'}. Continue the body naturally with correct human proportions.`,
+      `- Face: ${analysis.facial || 'as shown'}. Expression: ${analysis.expression || 'as shown'}. Do NOT modify any facial features whatsoever — keep exact same mouth shape, eye gaze, and cheek contour.`,
+      `- Skin tone: ${analysis.skintone || 'as shown'}. Match exactly — no lightening, darkening, or color shifting.`,
+      `- Body type: ${analysis.bodytype || 'as shown'}. Current pose: ${analysis.pose || 'as shown'}. Continue the body naturally with correct human proportions.`,
       `- Clothing: ${analysis.clothing || 'as shown'}. Extend the same garment seamlessly. Arms should be natural length with hands visible near mid-thigh.`,
     )
   }
@@ -305,7 +306,7 @@ async function buildOutpaintPrompt(image: NanoInlineAsset, userPrompt: string, t
     parts.push(`Lighting: ${analysis.lighting}. Match exactly — same direction, intensity, and shadow softness.`)
   }
   if (analysis.color) {
-    parts.push(`Color grading: ${analysis.color}. Match the exact color temperature and tint — no shifts.`)
+    parts.push(`CRITICAL color grading: ${analysis.color}. You MUST reproduce this exact color temperature, tint, and white balance in the entire output image including all extended areas. Do NOT shift toward blue, warm, or any other tone.`)
   }
 
   // Core rules
