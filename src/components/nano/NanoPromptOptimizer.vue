@@ -482,10 +482,36 @@ async function onSlotPaste(e: ClipboardEvent, idx: number) {
   checkForHistory()
 }
 
+function applySlotImage(idx: number, dataUrl: string, mime: string) {
+  describeSlots[idx].preview = dataUrl
+  describeSlots[idx].base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
+  describeSlots[idx].mime = mime
+  describeSlots[idx].result = null
+  activeSlotIdx.value = idx
+  autoUncheckOccupied(idx)
+  checkForHistory()
+}
+
 async function onSlotDropAsset(e: DragEvent, idx: number) {
   e.preventDefault()
   const dt = e.dataTransfer
   if (!dt) return
+
+  // Handle native file drops from OS (Finder, desktop, etc.)
+  if (dt.files?.length) {
+    const file = Array.from(dt.files).find(f => f.type.startsWith('image/'))
+    if (file) {
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(file)
+      })
+      applySlotImage(idx, dataUrl, file.type)
+      return
+    }
+  }
+
+  // Handle internal drag (from asset library)
   let url = ''
   let mime = 'image/jpeg'
   const raw = dt.getData('application/x-flowcraft-asset')
@@ -508,13 +534,7 @@ async function onSlotDropAsset(e: DragEvent, idx: number) {
       reader.onload = () => resolve(reader.result as string)
       reader.readAsDataURL(blob)
     })
-    describeSlots[idx].preview = dataUrl
-    describeSlots[idx].base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
-    describeSlots[idx].mime = blob.type || mime
-    describeSlots[idx].result = null
-    activeSlotIdx.value = idx
-    autoUncheckOccupied(idx)
-    checkForHistory()
+    applySlotImage(idx, dataUrl, blob.type || mime)
   } catch {}
 }
 

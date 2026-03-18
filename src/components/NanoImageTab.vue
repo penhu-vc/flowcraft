@@ -82,14 +82,16 @@ const props = defineProps<{
 const optimizerRef = ref<InstanceType<typeof NanoPromptOptimizer> | null>(null)
 const generationFormRef = ref<InstanceType<typeof NanoGenerationForm> | null>(null)
 
-// ── Computed accessor for mask editor (nested in generation form) ──
+// ── Computed accessor for mask editor & outpaint preview (nested in generation form) ──
 const maskEditorRef = computed(() => generationFormRef.value?.maskEditorRef ?? null)
+const outpaintPreviewRef = computed(() => generationFormRef.value?.outpaintPreviewRef ?? null)
 
 // ── Source Modes ──
 const sourceModes = [
   { value: 'text' as const, label: '文字生圖', icon: '✍️' },
   { value: 'edit' as const, label: '圖片編輯', icon: '🖌️' },
   { value: 'reference' as const, label: '參考圖', icon: '🧷' },
+  { value: 'outpaint' as const, label: '擴圖', icon: '🔲' },
 ]
 
 // ── Form State ──
@@ -126,6 +128,9 @@ const failedJobs = computed(() => jobs.value.filter(j => j.status === 'failed'))
 const pendingRestoredMask = ref<string | null>(null)
 const canSubmit = computed(() => {
   if (!props.configured) return false
+  if (form.sourceMode === 'outpaint') {
+    return !!form.image
+  }
   if (!form.prompt.trim()) return false
   if (form.sourceMode === 'edit' && !form.image) return false
   if (form.sourceMode === 'reference' && form.referenceImages.length === 0) return false
@@ -257,8 +262,15 @@ async function cropLatestResult(origW: number, origH: number) {
 function switchMode(mode: NanoSourceMode) {
   form.sourceMode = mode
   errorMessage.value = ''
-  form.image = null
-  form.referenceImages = []
+  if (mode !== 'outpaint' && mode !== 'edit') {
+    form.image = null
+  }
+  if (mode === 'outpaint' || mode === 'edit') {
+    form.referenceImages = []
+  } else {
+    form.image = null
+    form.referenceImages = []
+  }
 }
 
 // ── Submit ──
@@ -274,16 +286,35 @@ async function submit() {
       refDescriptions: [...refDescriptions.value],
     }
     const maskData = maskEditorRef.value?.exportMaskAsBase64() ?? null
+
+    // Outpaint mode: build expanded image + mask, send as edit mode
+    let outpaintImage: NanoInlineAsset | undefined
+    let outpaintMask: { base64Data: string; mimeType: 'image/png' } | undefined
+    let outpaintPrompt = form.prompt
+    if (form.sourceMode === 'outpaint' && outpaintPreviewRef.value) {
+      const expandedData = await outpaintPreviewRef.value.exportExpandedImage()
+      const maskDataOut = outpaintPreviewRef.value.exportMask()
+      if (expandedData && maskDataOut) {
+        outpaintImage = { base64Data: expandedData, mimeType: 'image/png' }
+        outpaintMask = { base64Data: maskDataOut, mimeType: 'image/png' }
+        const userPrompt = form.prompt.trim()
+        outpaintPrompt = userPrompt
+          ? `Extend the image naturally, filling the masked areas with coherent scenery that matches the original image's style and content. ${userPrompt}`
+          : 'Extend the image naturally, filling the masked areas with coherent scenery that matches the original image\'s style, lighting, and content. The extended areas should blend seamlessly with the original.'
+      }
+    }
+
+    const isOutpaint = form.sourceMode === 'outpaint'
     const payload: NanoGenerationPayload = {
-      sourceMode: form.sourceMode,
-      prompt: form.prompt,
+      sourceMode: isOutpaint ? 'edit' : form.sourceMode,
+      prompt: isOutpaint ? outpaintPrompt : form.prompt,
       negativePrompt: form.negativePrompt || undefined,
       aspectRatio: form.aspectRatio,
       imageSize: form.imageSize,
       numberOfImages: form.numberOfImages,
       personGeneration: form.personGeneration,
-      image: form.sourceMode === 'edit' ? form.image : undefined,
-      maskImage: form.sourceMode === 'edit' && maskData ? { base64Data: maskData, mimeType: 'image/png' } : undefined,
+      image: isOutpaint ? outpaintImage : (form.sourceMode === 'edit' ? form.image : undefined),
+      maskImage: isOutpaint ? outpaintMask : (form.sourceMode === 'edit' && maskData ? { base64Data: maskData, mimeType: 'image/png' } : undefined),
       referenceImages: form.sourceMode === 'reference' ? form.referenceImages : undefined,
       uiState,
     }

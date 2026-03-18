@@ -1,6 +1,6 @@
 import { API_ENDPOINTS } from './config'
 
-export type NanoSourceMode = 'text' | 'edit' | 'reference'
+export type NanoSourceMode = 'text' | 'edit' | 'reference' | 'outpaint'
 
 export interface NanoInlineAsset {
   base64Data: string

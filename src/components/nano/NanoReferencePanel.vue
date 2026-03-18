@@ -278,8 +278,24 @@ async function urlToAsset(url: string, mime: string): Promise<NanoInlineAsset> {
 
 async function onRefDropAsset(e: DragEvent, _slotIndex: number) {
   e.preventDefault()
+  if (props.referenceImages.length >= 14) return
+
+  // Handle native file drops from OS (Finder, desktop, etc.)
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/') || props.referenceImages.length >= 14) continue
+      const asset = await fileToAsset(file)
+      const images = [...props.referenceImages] as NanoRefAsset[]
+      images.push({ ...asset, referenceType: 'subject_default' })
+      emit('update:referenceImages', images)
+    }
+    return
+  }
+
+  // Handle internal drag (from asset library)
   const dropped = getDroppedAssetData(e)
-  if (!dropped?.url || props.referenceImages.length >= 14) return
+  if (!dropped?.url) return
   const { url, mime } = dropped
   const asset = await urlToAsset(url, mime)
   const images = [...props.referenceImages] as NanoRefAsset[]

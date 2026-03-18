@@ -37,6 +37,7 @@ const modeLabelMap: Record<NanoSourceMode, string> = {
   text: 'Text to Image',
   edit: 'Image Editing',
   reference: 'Reference Images',
+  outpaint: 'Outpaint',
 }
 
 function formatDate(value: string) {

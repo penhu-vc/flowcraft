@@ -93,6 +93,44 @@
         />
       </div>
 
+      <!-- Outpaint mode -->
+      <div v-if="form.sourceMode === 'outpaint'" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
+        <div class="asset-head">
+          <span>擴圖來源</span>
+          <label v-if="form.image" class="btn btn-secondary btn-sm">
+            更換圖片
+            <input type="file" accept="image/*" hidden @change="onImageUpload" />
+          </label>
+        </div>
+        <label v-if="!form.image" class="outpaint-upload-slot" @dragover.prevent @drop="onEditDropAsset">
+          <span class="outpaint-upload-plus">+</span>
+          <span class="outpaint-upload-hint">上傳 / 貼上</span>
+          <input type="file" accept="image/*" hidden @change="onImageUpload" />
+        </label>
+        <template v-if="form.image">
+          <div class="outpaint-ratio-bar">
+            <span class="outpaint-ratio-label">目標比例</span>
+            <div class="outpaint-ratio-options">
+              <button
+                v-for="r in outpaintRatios"
+                :key="r.value"
+                class="outpaint-ratio-pill"
+                :class="{ active: form.aspectRatio === r.value }"
+                @click="form.aspectRatio = r.value"
+              >
+                <span class="outpaint-ratio-icon">{{ r.icon }}</span>
+                {{ r.label }}
+              </button>
+            </div>
+          </div>
+          <NanoOutpaintPreview
+            ref="outpaintPreviewRef"
+            :image="form.image"
+            :target-ratio="form.aspectRatio"
+          />
+        </template>
+      </div>
+
       <!-- Reference mode: upload reference images -->
       <NanoReferencePanel
         v-if="form.sourceMode === 'reference'"
@@ -114,6 +152,15 @@
         </button>
       </div>
 
+      <!-- Generating overlay -->
+      <div v-if="submitting" class="generating-overlay">
+        <div class="generating-spinner" />
+        <div class="generating-text">圖片生成中，請稍候...</div>
+        <div class="generating-progress">
+          <div class="generating-progress-bar" />
+        </div>
+      </div>
+
       <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
     </div>
   </section>
@@ -123,6 +170,7 @@
 import { computed, ref } from 'vue'
 import type { NanoInlineAsset, NanoSourceMode } from '../../api/nano'
 import NanoMaskEditor from './NanoMaskEditor.vue'
+import NanoOutpaintPreview from './NanoOutpaintPreview.vue'
 import NanoReferencePanel from './NanoReferencePanel.vue'
 
 export interface NanoFormState {
@@ -160,10 +208,21 @@ const emit = defineEmits<{
   (e: 'run-ref-optimizer'): void
 }>()
 
-// ── Sub-component ref ──
+// ── Sub-component refs ──
 const maskEditorRef = ref<InstanceType<typeof NanoMaskEditor> | null>(null)
+const outpaintPreviewRef = ref<InstanceType<typeof NanoOutpaintPreview> | null>(null)
 
 const imagePreview = computed(() => props.form.image?.previewUrl || '')
+
+const outpaintRatios = [
+  { value: '9:16' as const, label: '9:16', icon: '📱' },
+  { value: '16:9' as const, label: '16:9', icon: '🖥️' },
+  { value: '1:1' as const, label: '1:1', icon: '⬜' },
+  { value: '4:3' as const, label: '4:3', icon: '📺' },
+  { value: '3:4' as const, label: '3:4', icon: '📋' },
+  { value: '3:2' as const, label: '3:2', icon: '🎞️' },
+  { value: '2:3' as const, label: '2:3', icon: '🃏' },
+]
 
 const submitHint = computed(() => {
   if (!props.configured) {
@@ -171,6 +230,9 @@ const submitHint = computed(() => {
   }
   if (props.form.sourceMode === 'edit') {
     return '上傳圖片後，用文字描述你要做的修改。'
+  }
+  if (props.form.sourceMode === 'outpaint') {
+    return '上傳圖片，選擇目標比例，AI 會自動擴展畫面。可加 Prompt 描述擴展區域的場景。'
   }
   if (props.form.sourceMode === 'reference') {
     return '上傳參考圖，搭配文字描述想要的風格或內容。'
@@ -264,26 +326,43 @@ function getDroppedAssetData(e: DragEvent): { url: string; mime: string; type: s
   return { url, mime: dt.getData('application/x-asset-mime') || 'image/jpeg', type: dt.getData('application/x-asset-type') || '' }
 }
 
+function emitAssetWithSize(asset: NanoInlineAsset) {
+  if (!asset.previewUrl) return
+  const img = new Image()
+  img.onload = () => {
+    const size = { width: img.naturalWidth, height: img.naturalHeight }
+    const closest = detectClosestRatio(img.naturalWidth, img.naturalHeight)
+    emit('image-uploaded', asset, size, closest)
+  }
+  img.src = asset.previewUrl
+}
+
 async function onEditDropAsset(e: DragEvent) {
   e.preventDefault()
+
+  // Handle native file drops from OS (Finder, desktop, etc.)
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    const file = Array.from(files).find(f => f.type.startsWith('image/'))
+    if (file) {
+      const asset = await fileToAsset(file)
+      emitAssetWithSize(asset)
+      return
+    }
+  }
+
+  // Handle internal drag (from asset library)
   const dropped = getDroppedAssetData(e)
   if (!dropped?.url) return
   const { url, mime } = dropped
   const asset = await urlToAsset(url, mime)
-  if (asset.previewUrl) {
-    const img = new Image()
-    img.onload = () => {
-      const size = { width: img.naturalWidth, height: img.naturalHeight }
-      const closest = detectClosestRatio(img.naturalWidth, img.naturalHeight)
-      emit('image-uploaded', asset, size, closest)
-    }
-    img.src = asset.previewUrl
-  }
+  emitAssetWithSize(asset)
 }
 
 // ── Expose mask editor ref for parent access ──
 defineExpose({
   maskEditorRef,
+  outpaintPreviewRef,
 })
 </script>
 
@@ -320,5 +399,142 @@ defineExpose({
 .nano-params-row .form-group {
   gap: 4px;
   min-width: 0;
+}
+
+.outpaint-upload-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 160px;
+  height: 120px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  background: transparent;
+}
+
+.outpaint-upload-slot:hover {
+  border-color: rgba(6, 182, 212, 0.5);
+  background: rgba(6, 182, 212, 0.06);
+}
+
+.outpaint-upload-plus {
+  font-size: 28px;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.outpaint-upload-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.outpaint-ratio-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.outpaint-ratio-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.outpaint-ratio-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.outpaint-ratio-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.outpaint-ratio-pill:hover {
+  border-color: rgba(168, 85, 247, 0.4);
+  color: var(--text-primary);
+}
+
+.outpaint-ratio-pill.active {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(168, 85, 247, 0.18);
+  color: var(--text-primary);
+}
+
+.outpaint-ratio-icon {
+  font-size: 13px;
+}
+
+/* Generating overlay */
+.generating-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 20px;
+  border-radius: 12px;
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  animation: fadeIn 0.3s ease;
+}
+
+.generating-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(124, 58, 237, 0.2);
+  border-top-color: rgba(124, 58, 237, 0.8);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.generating-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.generating-progress {
+  width: 100%;
+  max-width: 280px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.generating-progress-bar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.7), transparent);
+  animation: indeterminate 1.5s infinite ease-in-out;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 </style>
