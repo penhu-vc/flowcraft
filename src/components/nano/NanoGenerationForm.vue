@@ -4,7 +4,7 @@
       <span class="card-title">生成設定</span>
     </div>
     <div class="card-body veo-form">
-      <div class="mode-strip">
+      <div v-show="!multiAngle" class="mode-strip">
         <button
           v-for="item in sourceModes"
           :key="item.value"
@@ -17,7 +17,7 @@
         </button>
       </div>
 
-      <div class="form-group">
+      <div v-show="!multiAngle" class="form-group">
         <label class="form-label">Prompt</label>
         <textarea
           v-model="form.prompt"
@@ -26,7 +26,7 @@
         />
       </div>
 
-      <div class="nano-params-row">
+      <div v-show="!multiAngle" class="nano-params-row">
         <div class="form-group">
           <label class="form-label">比例</label>
           <select v-model="form.aspectRatio" class="form-select form-select-sm">
@@ -65,7 +65,7 @@
         </div>
       </div>
 
-      <div class="form-group">
+      <div v-show="!multiAngle" class="form-group">
         <label class="form-label">Negative Prompt</label>
         <textarea
           v-model="form.negativePrompt"
@@ -75,7 +75,7 @@
       </div>
 
       <!-- Edit mode: upload image + mask painting -->
-      <div v-if="form.sourceMode === 'edit'" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
+      <div v-if="form.sourceMode === 'edit' && !multiAngle" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
         <div class="asset-head">
           <span>編輯圖片</span>
           <label class="btn btn-secondary btn-sm">
@@ -94,7 +94,7 @@
       </div>
 
       <!-- Outpaint mode -->
-      <div v-if="form.sourceMode === 'outpaint'" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
+      <div v-if="form.sourceMode === 'outpaint' && !multiAngle" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
         <div class="asset-head">
           <span>擴圖來源</span>
           <label v-if="form.image" class="btn btn-secondary btn-sm">
@@ -176,13 +176,14 @@
             ref="outpaintPreviewRef"
             :image="form.image"
             :target-ratio="form.aspectRatio"
+            @clear-image="form.image = null"
           />
         </template>
       </div>
 
       <!-- Reference mode: upload reference images -->
       <NanoReferencePanel
-        v-if="form.sourceMode === 'reference'"
+        v-if="form.sourceMode === 'reference' && !multiAngle"
         :reference-images="form.referenceImages"
         :ref-descriptions="refDescriptions"
         :optimizer-disabled="optimizerDisabled"
@@ -192,23 +193,27 @@
         @run-ref-optimizer="$emit('run-ref-optimizer')"
       />
 
-      <!-- ── 多角度模式 ── -->
-      <div class="multi-angle-section">
-        <div class="multi-angle-header" @click="multiAngle = !multiAngle">
+      <!-- ── 多角度模式（從歷史卡片觸發時才顯示，獨立於其他模式） ── -->
+      <div v-if="multiAngle" class="multi-angle-section">
+        <div class="multi-angle-header">
           <span class="multi-angle-title">
-            <span class="ma-toggle-icon">{{ multiAngle ? '▾' : '▸' }}</span>
             📐 多角度模式
           </span>
-          <span class="ma-badge" v-if="multiAngle && angleShots.some(s => s.enabled)">{{ angleShots.filter(s => s.enabled).length }} 個角度 · {{ angleShots.filter(s => s.enabled && s.refImage).length }} 張參考圖</span>
+          <button class="btn btn-secondary btn-sm" @click="multiAngle = false">✕ 關閉</button>
+          <span class="ma-badge" v-if="angleShots.some(s => s.enabled)">{{ angleShots.filter(s => s.enabled).length }} 個角度 · {{ angleShots.filter(s => s.enabled && s.refImage).length }} 張參考圖</span>
         </div>
 
-        <div v-if="multiAngle" class="multi-angle-body">
-          <!-- 說明 -->
-          <div class="ma-info-bar">
-            💡 每個角度可選填一張對應的參考圖。生成時 AI 會先分析參考圖，再把描述加入 prompt，讓該角度更精準。
+        <div class="multi-angle-body">
+          <!-- 來源圖片預覽 -->
+          <div v-if="multiAngleSourceUrl" class="ma-source-preview">
+            <span class="ma-source-label">來源圖片</span>
+            <img :src="multiAngleSourceUrl" class="ma-source-img" />
           </div>
 
-          <!-- 每個角度的卡片 -->
+          <div class="ma-info-bar">
+            💡 選擇要生成的角度，每個角度可選填參考圖讓結果更精準。
+          </div>
+
           <div class="ma-shot-cards">
             <div
               v-for="shot in angleShots"
@@ -216,13 +221,11 @@
               class="ma-shot-card"
               :class="{ active: shot.enabled }"
             >
-              <!-- 左側：勾選 + 名稱 -->
               <label class="ma-shot-card-label">
                 <input type="checkbox" v-model="shot.enabled" />
                 <span class="ma-shot-icon">{{ shot.icon }}</span>
                 <span>{{ shot.label }}</span>
               </label>
-              <!-- 右側：參考圖 slot -->
               <div class="ma-shot-ref">
                 <div v-if="shot.refImage" class="ma-shot-ref-filled">
                   <img :src="shot.refImage.previewUrl" />
@@ -236,7 +239,6 @@
             </div>
           </div>
 
-          <!-- 朝向設定（無參考圖時的 fallback） -->
           <div class="ma-facing-row">
             <span class="ma-facing-label">未提供參考圖的角度，角色朝向：</span>
             <label class="ma-radio"><input type="radio" v-model="facingMode" value="camera" /> 面向鏡頭</label>
@@ -286,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { NanoInlineAsset, NanoSourceMode } from '../../api/nano'
 import NanoMaskEditor from './NanoMaskEditor.vue'
 import NanoOutpaintPreview from './NanoOutpaintPreview.vue'
@@ -314,6 +316,8 @@ const props = defineProps<{
   refDescriptions: string[]
   optimizerDisabled?: boolean
   pendingRestoredMask?: string | null
+  activateMultiAngle?: boolean
+  multiAngleSourceUrl?: string
 }>()
 
 const emit = defineEmits<{
@@ -334,6 +338,8 @@ const outpaintPreviewRef = ref<InstanceType<typeof NanoOutpaintPreview> | null>(
 
 // ── Multi-angle mode ──
 const multiAngle = ref(false)
+const multiAngleSourceUrl = computed(() => props.multiAngleSourceUrl || '')
+watch(() => props.activateMultiAngle, (v) => { if (v) multiAngle.value = true })
 const facingMode = ref<'camera' | 'free'>('camera')
 
 interface AngleShot {
@@ -781,6 +787,24 @@ defineExpose({
 }
 
 /* ── Multi-angle ── */
+.ma-source-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ma-source-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ma-source-img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+}
 .multi-angle-section {
   border: 1px solid var(--border);
   border-radius: 10px;

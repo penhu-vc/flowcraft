@@ -2,6 +2,7 @@
   <div class="outpaint-preview">
     <div class="preview-canvas-wrap" :style="{ aspectRatio: canvasAspectRatio }">
       <canvas ref="previewCanvasRef" class="preview-canvas" />
+      <button class="outpaint-clear-btn" @click="$emit('clear-image')" title="移除圖片">✕</button>
     </div>
     <p class="outpaint-info">
       {{ infoText }}
@@ -16,6 +17,10 @@ import type { NanoInlineAsset } from '../../api/nano'
 const props = defineProps<{
   image: NanoInlineAsset
   targetRatio: string
+}>()
+
+defineEmits<{
+  (e: 'clear-image'): void
 }>()
 
 const previewCanvasRef = ref<HTMLCanvasElement | null>(null)
@@ -266,6 +271,29 @@ defineExpose({
   height: 100%;
   display: block;
   object-fit: contain;
+}
+
+.outpaint-clear-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(220, 38, 38, 0.7);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 5;
+}
+
+.outpaint-clear-btn:hover {
+  background: rgba(220, 38, 38, 0.95);
 }
 
 .outpaint-info {

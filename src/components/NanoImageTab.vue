@@ -3,7 +3,7 @@
     <!-- Prompt Optimizer -->
     <NanoPromptOptimizer
       ref="optimizerRef"
-      :source-modes="sourceModes"
+      :source-modes="optimizerModes"
       @use-prompt="onUsePrompt"
     />
 
@@ -19,6 +19,8 @@
       :ref-descriptions="refDescriptions"
       :optimizer-disabled="optimizerRef?.optimizing"
       :pending-restored-mask="pendingRestoredMask"
+      :activate-multi-angle="showMultiAngle"
+      :multi-angle-source-url="multiAngleSourceUrl"
       @submit="submit"
       @submit-multi-angle="submitMultiAngle"
       @switch-mode="switchMode"
@@ -42,6 +44,7 @@
       @restore="restoreJob"
       @remove="removeJob"
       @use-as-edit-source="useAsEditSource"
+      @use-as-multiangle-source="useAsMultiangleSource"
     />
 
     <!-- Lightbox -->
@@ -97,6 +100,7 @@ const sourceModes = [
   { value: 'reference' as const, label: '參考圖', icon: '🧷' },
   { value: 'outpaint' as const, label: '擴圖', icon: '🔲' },
 ]
+const optimizerModes = sourceModes.filter(m => m.value !== 'outpaint')
 
 // ── Form State ──
 const jobs = ref<NanoJob[]>([])
@@ -586,6 +590,17 @@ function useAsEditSource(localUrl: string) {
     previewUrl: resolveMediaUrl(localUrl),
   }
 }
+
+const showMultiAngle = ref(false)
+
+function useAsMultiangleSource(localUrl: string) {
+  multiAngleSourceUrl.value = resolveMediaUrl(localUrl)
+  showMultiAngle.value = false
+  nextTick(() => { showMultiAngle.value = true })
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+const multiAngleSourceUrl = ref('')
 
 function normalizeAsset(asset?: NanoInlineAsset | null): NanoInlineAsset | null {
   if (!asset?.base64Data) return null

@@ -68,6 +68,9 @@
                 <button class="btn btn-primary btn-sm" @click="$emit('use-as-edit-source', output.localUrl!)">
                   編輯這張
                 </button>
+                <button class="btn btn-outline btn-sm" @click="$emit('use-as-multiangle-source', output.localUrl!)">
+                  📐 多角度
+                </button>
               </div>
             </div>
           </div>
@@ -115,6 +118,7 @@ defineEmits<{
   (e: 'restore', job: NanoJob): void
   (e: 'remove', jobId: string): void
   (e: 'use-as-edit-source', localUrl: string): void
+  (e: 'use-as-multiangle-source', localUrl: string): void
 }>()
 
 const modeLabelMap: Record<NanoSourceMode, string> = {

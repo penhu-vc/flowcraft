@@ -22,7 +22,7 @@
         <textarea
           v-model="optimizerInput"
           class="form-textarea optimizer-textarea"
-          placeholder="用中文或英文描述你想生成的影片，例如：一個女生在咖啡廳看書，陽光灑進來，慢動作翻頁"
+          :placeholder="modePlaceholder"
         />
         <button
           class="btn btn-primary optimizer-btn"
@@ -130,6 +130,17 @@ const emit = defineEmits<{
 
 const optimizerInput = ref('')
 const optimizerMode = ref<VeoSourceMode>('text')
+
+const modePlaceholder = computed(() => {
+  const map: Record<string, string> = {
+    text: '文字生成：用文字描述想要的影片畫面，AI 會根據描述生成影片。例如：一個女生在咖啡廳看書，陽光灑進來，慢動作翻頁',
+    image: '圖片生成：上傳一張圖片作為起始畫面，AI 會讓畫面動起來。描述你希望的動態效果',
+    first_last: '首尾幀：提供第一幀和最後一幀的畫面描述或圖片，AI 會自動生成中間的過渡動畫',
+    reference: '參考圖：上傳參考圖片，AI 會模仿其風格、色調或構圖來生成影片',
+    extend: '延長影片：上傳已有的影片，AI 會自然延續內容，生成後續畫面',
+  }
+  return map[optimizerMode.value] || '描述你想生成的內容'
+})
 const optimizing = ref(false)
 const optimizeStep = ref(0)
 const optimizeResult = ref<OptimizeResult | null>(null)

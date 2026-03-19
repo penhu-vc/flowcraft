@@ -31,6 +31,22 @@
 
       <!-- 參考圖模式：最多 5 張圖片，各自設定描述面向 -->
       <div v-if="optimizerMode === 'reference'" class="ref-describe-block">
+        <!-- 人物角色快選 -->
+        <div class="char-pills">
+          <span class="char-pills-label">人物：</span>
+          <button
+            v-for="c in characters"
+            :key="c.id"
+            class="char-pill"
+            @click="applyCharacter(c.id)"
+          >
+            <img v-if="c.photo" :src="c.photo" class="char-pill-avatar" />
+            <span>{{ c.name }}</span>
+            <button class="char-pill-edit" @click.stop="openCharModal(c.id)" title="編輯">✎</button>
+          </button>
+          <button class="char-pill char-pill-add" @click="openCharModal()">+ 新增人物</button>
+        </div>
+
         <div class="ref-slots-grid">
           <div v-for="(slot, idx) in describeSlots" :key="idx" class="ref-slot media-card-wrap" :class="{ active: activeSlotIdx === idx }" @click="activeSlotIdx = idx">
             <div v-if="!slot.preview" class="ref-slot-empty" tabindex="0" @click.stop="triggerSlotUpload(idx)" @dragover.prevent @drop.stop="onSlotDropAsset($event, idx)" @paste.stop="onSlotPaste($event, idx)" @mouseenter="($event.target as HTMLElement).focus()"  @mouseleave="($event.target as HTMLElement).blur()">
@@ -66,29 +82,35 @@
               {{ describing ? '描述中...' : '🔍 AI 描述全部' }}
             </button>
           </div>
-          <div class="ref-aspect-checks">
-            <label
+          <div class="ref-aspect-presets">
+            <button class="preset-pill" :class="{ active: isPresetActive('person') }" @click="applyPreset('person')">👤 人物參考</button>
+            <button class="preset-pill" :class="{ active: isPresetActive('scene') }" @click="applyPreset('scene')">🖼️ 參考圖片</button>
+          </div>
+          <div class="ref-aspect-rows">
+            <div
               v-for="asp in describeSlots[activeSlotIdx].aspects"
               :key="asp.key"
-              class="ref-aspect-label"
-              :class="{ occupied: getAspectOwner(asp.key) >= 0 }"
-              :title="getAspectOwner(asp.key) >= 0 ? `已被圖 ${getAspectOwner(asp.key) + 1} 使用` : ''"
+              class="ref-aspect-row"
+              :class="{ occupied: getAspectOwner(asp.key) >= 0, dimmed: !asp.checked }"
             >
+              <label class="ref-aspect-row-label">
+                <input
+                  type="checkbox"
+                  v-model="asp.checked"
+                  :disabled="getAspectOwner(asp.key) >= 0"
+                  @change="rebuildRefDescription"
+                />
+                <span class="ref-aspect-name">{{ asp.label }}</span>
+                <span v-if="getAspectOwner(asp.key) >= 0" class="occupied-badge">圖{{ getAspectOwner(asp.key) + 1 }}</span>
+              </label>
               <input
-                type="checkbox"
-                v-model="asp.checked"
-                :disabled="getAspectOwner(asp.key) >= 0"
-                @change="rebuildRefDescription"
+                type="text"
+                class="form-input form-input-sm ref-aspect-input"
+                v-model="asp.userText"
+                :placeholder="asp.checked ? 'AI 描述或手動輸入...' : '未啟用'"
+                :disabled="!asp.checked || getAspectOwner(asp.key) >= 0"
+                @input="rebuildRefDescription"
               />
-              {{ asp.label }}
-              <span v-if="getAspectOwner(asp.key) >= 0" class="occupied-badge">圖{{ getAspectOwner(asp.key) + 1 }}</span>
-            </label>
-          </div>
-
-          <div v-if="describeSlots[activeSlotIdx].result" class="ref-describe-result">
-            <div v-for="asp in describeSlots[activeSlotIdx].aspects" :key="asp.key" class="ref-describe-item" :class="{ dimmed: !asp.checked }">
-              <span class="ref-describe-tag">{{ asp.label }}</span>
-              <span class="ref-describe-text">{{ describeSlots[activeSlotIdx].result?.[asp.key] || '—' }}</span>
             </div>
           </div>
         </div>
@@ -98,9 +120,7 @@
         <textarea
           v-model="optimizerInput"
           class="form-textarea optimizer-textarea"
-          :placeholder="optimizerMode === 'reference'
-            ? '上傳參考照片後點「AI 描述」，會自動填入描述；你也可以手動補充或修改'
-            : '用中文或英文描述你想生成的圖片，例如：一隻橘貓坐在窗台上，窗外是雨天的東京街景，暖色調'"
+          :placeholder="modePlaceholder"
         />
         <div class="optimizer-btn-group">
           <button
@@ -176,6 +196,55 @@
       <button class="lightbox-close" @click="lightboxUrl = null">×</button>
     </div>
   </Teleport>
+
+  <!-- 人物角色編輯 Modal -->
+  <Teleport to="body">
+    <div v-if="showCharModal" class="char-modal-overlay" @click.self="closeCharModal">
+      <div class="char-modal">
+        <div class="char-modal-header">
+          <h3>{{ editingCharId ? '編輯人物' : '新增人物' }}</h3>
+          <button class="char-modal-close" @click="closeCharModal">×</button>
+        </div>
+        <div class="char-modal-body">
+          <div class="char-modal-photo">
+            <img v-if="charForm.photo" :src="charForm.photo" class="char-modal-preview" />
+            <label v-else class="char-modal-upload">
+              <span>+ 上傳照片</span>
+              <input type="file" accept="image/*" hidden @change="onCharPhotoUpload" />
+            </label>
+            <div class="char-modal-photo-actions">
+              <label v-if="charForm.photo" class="btn btn-secondary btn-sm">
+                更換
+                <input type="file" accept="image/*" hidden @change="onCharPhotoUpload" />
+              </label>
+              <button class="btn btn-primary btn-sm" :disabled="!charForm.photo || charDescribing" @click="describeCharPhoto">
+                {{ charDescribing ? '分析中...' : '🔍 AI 描述' }}
+              </button>
+            </div>
+          </div>
+          <div class="char-modal-fields">
+            <div class="char-field">
+              <label class="char-field-label">名稱</label>
+              <input v-model="charForm.name" type="text" class="form-input form-input-sm" placeholder="例：葉介" />
+            </div>
+            <div v-for="asp in ASPECT_DEFAULTS.filter(a => ['facial','hairstyle','skintone','bodytype','expression'].includes(a.key))" :key="asp.key" class="char-field">
+              <label class="char-field-label">{{ asp.label }}</label>
+              <input v-model="charForm.aspects[asp.key]" type="text" class="form-input form-input-sm" placeholder="AI 描述或手動輸入..." />
+            </div>
+          </div>
+        </div>
+        <div class="char-modal-footer">
+          <button v-if="editingCharId" class="btn btn-danger btn-sm" @click="deleteCharProfile">刪除</button>
+          <div class="char-modal-footer-right">
+            <button class="btn btn-secondary btn-sm" @click="closeCharModal">取消</button>
+            <button class="btn btn-primary btn-sm" :disabled="!charForm.name.trim()" @click="saveCharProfile">
+              {{ editingCharId ? '儲存' : '建立' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -190,6 +259,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'use-prompt', prompt: string, negativePrompt: string, mode: NanoSourceMode): void
+  (e: 'apply-character', data: { photo: string; mime: string; name: string }): void
 }>()
 
 const { addAsset, hasAsset } = useAssetLibrary()
@@ -201,6 +271,16 @@ function collectAssetDirect(url: string) {
 // ── Optimizer State ──
 const optimizerInput = ref('')
 const optimizerMode = ref<NanoSourceMode>('text')
+
+const modePlaceholder = computed(() => {
+  const map: Record<string, string> = {
+    text: '文字生圖：用文字描述想要的圖片，AI 會根據描述生成。例如：一隻橘貓坐在窗台上，窗外是雨天的東京街景，暖色調',
+    edit: '圖片編輯：上傳圖片並描述想要的修改，例如：把背景換成海邊、移除路人、改變天氣',
+    reference: '參考圖：上傳參考照片後點「AI 描述」，會自動填入描述；你也可以手動補充或修改',
+  }
+  return map[optimizerMode.value] || '描述你想生成的內容'
+})
+
 const optimizing = ref(false)
 const optimizeStep = ref(0)
 const optimizeResult = ref<{
@@ -228,6 +308,155 @@ const componentRows = computed(() => {
   ]
 })
 
+// ── Character Profiles ──
+interface CharacterProfile {
+  id: string
+  name: string
+  photo: string // base64
+  photoMime: string
+  aspects: Record<string, string> // key → description text
+}
+
+const CHAR_STORAGE_KEY = 'flowcraft-characters'
+const characters = ref<CharacterProfile[]>(loadCharacters())
+const showCharModal = ref(false)
+const editingCharId = ref<string | null>(null)
+const charForm = reactive({
+  name: '',
+  photo: '',
+  photoMime: '',
+  aspects: {} as Record<string, string>,
+})
+const charDescribing = ref(false)
+
+function loadCharacters(): CharacterProfile[] {
+  try {
+    const raw = localStorage.getItem(CHAR_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+function saveCharacters() {
+  localStorage.setItem(CHAR_STORAGE_KEY, JSON.stringify(characters.value))
+}
+
+function openCharModal(charId?: string) {
+  if (charId) {
+    const c = characters.value.find(ch => ch.id === charId)
+    if (!c) return
+    editingCharId.value = charId
+    charForm.name = c.name
+    charForm.photo = c.photo
+    charForm.photoMime = c.photoMime
+    charForm.aspects = { ...c.aspects }
+  } else {
+    editingCharId.value = null
+    charForm.name = ''
+    charForm.photo = ''
+    charForm.photoMime = ''
+    charForm.aspects = {}
+  }
+  showCharModal.value = true
+}
+
+function closeCharModal() {
+  showCharModal.value = false
+  editingCharId.value = null
+}
+
+async function onCharPhotoUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const base64 = await new Promise<string>((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.readAsDataURL(file)
+  })
+  charForm.photo = base64
+  charForm.photoMime = file.type || 'image/png'
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+async function describeCharPhoto() {
+  if (!charForm.photo) return
+  charDescribing.value = true
+  try {
+    const personAspects = ['facial', 'hairstyle', 'skintone', 'bodytype', 'expression']
+    const res = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: { base64Data: charForm.photo, mimeType: charForm.photoMime },
+        aspects: personAspects,
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    if (data.description) {
+      for (const [key, val] of Object.entries(data.description)) {
+        if (!charForm.aspects[key]) charForm.aspects[key] = val as string
+      }
+    }
+  } catch (err) {
+    console.error('Character describe failed:', err)
+  } finally {
+    charDescribing.value = false
+  }
+}
+
+function saveCharProfile() {
+  if (!charForm.name.trim()) return
+  if (editingCharId.value) {
+    const idx = characters.value.findIndex(c => c.id === editingCharId.value)
+    if (idx >= 0) {
+      characters.value[idx] = {
+        ...characters.value[idx],
+        name: charForm.name,
+        photo: charForm.photo,
+        photoMime: charForm.photoMime,
+        aspects: { ...charForm.aspects },
+      }
+    }
+  } else {
+    characters.value.push({
+      id: Date.now().toString(36),
+      name: charForm.name,
+      photo: charForm.photo,
+      photoMime: charForm.photoMime,
+      aspects: { ...charForm.aspects },
+    })
+  }
+  saveCharacters()
+  closeCharModal()
+}
+
+function deleteCharProfile() {
+  if (!editingCharId.value) return
+  characters.value = characters.value.filter(c => c.id !== editingCharId.value)
+  saveCharacters()
+  closeCharModal()
+}
+
+function applyCharacter(charId: string) {
+  const c = characters.value.find(ch => ch.id === charId)
+  if (!c) return
+  // Fill aspect fields in active slot
+  const slot = describeSlots[activeSlotIdx.value]
+  if (slot) {
+    for (const asp of slot.aspects) {
+      if (c.aspects[asp.key] && !asp.userText.trim()) {
+        asp.userText = c.aspects[asp.key]
+        asp.checked = true
+      }
+    }
+    rebuildRefDescription()
+  }
+  // Emit to add photo as reference image (type=person)
+  if (c.photo) {
+    emit('apply-character', { photo: c.photo, mime: c.photoMime, name: c.name })
+  }
+}
+
 // ── Reference Image Describe (multi-slot, max 5) ──
 const describing = ref(false)
 const activeSlotIdx = ref(0)
@@ -236,6 +465,7 @@ interface DescribeAspect {
   key: string
   label: string
   checked: boolean
+  userText: string
 }
 
 interface RefSlot {
@@ -265,7 +495,7 @@ function createEmptySlot(): RefSlot {
     preview: '',
     base64: '',
     mime: '',
-    aspects: ASPECT_DEFAULTS.map(a => ({ ...a, checked: true })),
+    aspects: ASPECT_DEFAULTS.map(a => ({ ...a, checked: true, userText: '' })),
     result: null,
   }
 }
@@ -361,6 +591,10 @@ function importHistory() {
       for (const asp of current.aspects) {
         const savedAsp = savedSlot.aspects.find(a => a.key === asp.key)
         if (savedAsp) asp.checked = savedAsp.checked
+        // Restore userText from saved result
+        if (!asp.userText && savedSlot.result?.[asp.key]) {
+          asp.userText = savedSlot.result[asp.key]
+        }
       }
     }
   }
@@ -378,6 +612,28 @@ const describeSlots = reactive<RefSlot[]>([
   createEmptySlot(),
   createEmptySlot(),
 ])
+
+const PERSON_ASPECTS = ['facial', 'hairstyle', 'skintone', 'expression']
+const SCENE_ASPECTS = ['bodytype', 'pose', 'clothing', 'background', 'lighting', 'composition', 'color']
+
+function isPresetActive(preset: 'person' | 'scene'): boolean {
+  const slot = describeSlots[activeSlotIdx.value]
+  if (!slot) return false
+  const keys = preset === 'person' ? PERSON_ASPECTS : SCENE_ASPECTS
+  const checked = slot.aspects.filter(a => a.checked).map(a => a.key)
+  return keys.every(k => checked.includes(k)) && checked.every(k => keys.includes(k))
+}
+
+function applyPreset(preset: 'person' | 'scene') {
+  const slot = describeSlots[activeSlotIdx.value]
+  if (!slot) return
+  const keys = preset === 'person' ? PERSON_ASPECTS : SCENE_ASPECTS
+  for (const asp of slot.aspects) {
+    if (getAspectOwner(asp.key) >= 0) continue // skip occupied
+    asp.checked = keys.includes(asp.key)
+  }
+  rebuildRefDescription()
+}
 
 function getAspectOwner(aspectKey: string): number {
   for (let i = 0; i < describeSlots.length; i++) {
@@ -546,7 +802,8 @@ async function describeAllSlots() {
   describing.value = true
   try {
     await Promise.all(slotsToDescribe.map(async ({ slot, idx }) => {
-      const checkedAspects = slot.aspects.filter(a => a.checked).map(a => a.key)
+      const checkedAspects = slot.aspects.filter(a => a.checked && !a.userText.trim()).map(a => a.key)
+      if (!checkedAspects.length) return // All aspects already have user text
       const res = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -558,6 +815,12 @@ async function describeAllSlots() {
       if (!res.ok) throw new Error(`圖 ${idx + 1}: ${await res.text()}`)
       const data = await res.json()
       slot.result = data.description
+      // Fill userText only when empty
+      for (const asp of slot.aspects) {
+        if (asp.checked && !asp.userText.trim() && data.description?.[asp.key]) {
+          asp.userText = data.description[asp.key]
+        }
+      }
     }))
     rebuildRefDescription()
     saveCurrentToHistory()
@@ -571,11 +834,11 @@ async function describeAllSlots() {
 function rebuildRefDescription() {
   const allParts: string[] = []
   describeSlots.forEach((slot, idx) => {
-    if (!slot.result) return
+    if (!slot.base64) return
     const parts: string[] = []
     for (const asp of slot.aspects) {
-      if (asp.checked && slot.result[asp.key]) {
-        parts.push(`${asp.label}：${slot.result[asp.key]}`)
+      if (asp.checked && asp.userText.trim()) {
+        parts.push(`${asp.label}：${asp.userText.trim()}`)
       }
     }
     if (parts.length) {
@@ -1021,34 +1284,81 @@ defineExpose({
   justify-content: space-between;
   gap: 10px;
 }
+.ref-aspect-presets {
+  display: flex;
+  gap: 6px;
+}
+.preset-pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #444);
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-pill:hover {
+  border-color: var(--accent-purple, #7c3aed);
+  color: var(--text-primary, #fff);
+}
+.preset-pill.active {
+  background: var(--accent-purple, #7c3aed);
+  border-color: var(--accent-purple, #7c3aed);
+  color: #fff;
+}
 .ref-slot-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--c-primary, #7c3aed);
 }
-.ref-aspect-checks {
+.ref-aspect-rows {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  flex-direction: column;
+  gap: 6px;
 }
-.ref-aspect-label {
-  font-size: 12px;
+.ref-aspect-row {
   display: flex;
   align-items: center;
-  gap: 3px;
-  cursor: pointer;
-  white-space: nowrap;
+  gap: 8px;
 }
-.ref-aspect-label input[type="checkbox"] {
-  margin: 0;
+.ref-aspect-row.dimmed {
+  opacity: 0.4;
 }
-.ref-aspect-label.occupied {
+.ref-aspect-row.occupied {
   opacity: 0.4;
   cursor: not-allowed;
-  position: relative;
 }
-.ref-aspect-label.occupied:hover {
-  opacity: 0.7;
+.ref-aspect-row-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 90px;
+}
+.ref-aspect-row-label input[type="checkbox"] {
+  margin: 0;
+}
+.ref-aspect-name {
+  font-weight: 500;
+}
+.ref-aspect-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: var(--c-bg, #0e0e18);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary, #fff);
+}
+.ref-aspect-input:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.ref-aspect-input::placeholder {
+  color: var(--text-muted, #666);
 }
 .occupied-badge {
   font-size: 10px;
@@ -1157,5 +1467,161 @@ defineExpose({
 }
 .media-card-wrap:hover .collect-done {
   opacity: 1;
+}
+
+/* ── Character Pills ── */
+.char-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.char-pills-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.char-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--c-surface, #1a1a2e);
+  color: var(--text-primary, #fff);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+.char-pill:hover {
+  border-color: var(--accent-purple, #7c3aed);
+  background: rgba(124, 58, 237, 0.1);
+}
+.char-pill-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.char-pill-edit {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.char-pill:hover .char-pill-edit {
+  display: inline;
+}
+.char-pill-add {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+/* ── Character Modal ── */
+.char-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.char-modal {
+  background: var(--c-surface, #1a1a2e);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.char-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.char-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.char-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.char-modal-body {
+  padding: 20px;
+  display: flex;
+  gap: 16px;
+}
+.char-modal-photo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+.char-modal-preview {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+}
+.char-modal-upload {
+  width: 100px;
+  height: 100px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.char-modal-upload:hover {
+  border-color: var(--accent-purple, #7c3aed);
+}
+.char-modal-photo-actions {
+  display: flex;
+  gap: 4px;
+}
+.char-modal-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.char-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.char-field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.char-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.char-modal-footer-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 </style>

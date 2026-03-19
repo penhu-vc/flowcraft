@@ -82,18 +82,8 @@
 
       <p v-if="constraintHint" class="hint constraint-hint">⚠️ {{ constraintHint }}</p>
 
-      <div class="form-group">
-        <label class="form-label">GCS 輸出路徑（Vertex AI 進階）</label>
-        <input
-          v-model="form.outputGcsUri"
-          type="text"
-          class="form-input"
-          placeholder="gs://your-bucket/veo-output/"
-        />
-        <p class="hint">
-          Extend、較大輸出或特定模型組合時，Vertex AI 可能要求提供 `outputGcsUri`。
-        </p>
-      </div>
+      <!-- GCS 輸出路徑 - 隱藏，一般用戶不需要 -->
+      <input type="hidden" :value="form.outputGcsUri" />
 
       <div class="form-group">
         <label class="form-label">Negative Prompt</label>
@@ -104,68 +94,71 @@
         />
       </div>
 
-      <!-- Start Image Block -->
-      <div v-if="form.sourceMode === 'image' || form.sourceMode === 'frames'" class="asset-block" @dragover.prevent @drop="$emit('start-image-drop', $event)">
-        <div class="asset-head">
-          <span>起始圖片</span>
-          <div class="asset-head-actions">
-            <button
-              v-if="form.image && !expandingImage"
-              class="btn btn-secondary btn-sm"
-              @click="$emit('expand-border', 'start')"
-              title="在圖片四周加上邊距，防止裁切"
-            >🔲 拓展邊界</button>
-            <span v-if="expandingImage === 'start'" class="expanding-hint">拓展中...</span>
-            <button
-              v-if="form.image && form.sourceMode === 'frames'"
-              class="btn btn-secondary btn-sm"
-              @click="$emit('copy-start-to-end')"
-            >📋 套用到結尾</button>
-            <label class="btn btn-secondary btn-sm">
-              上傳圖片
-              <input type="file" accept="image/*" hidden @change="$emit('image-upload', $event)" />
-            </label>
+      <!-- Start/End Image Blocks -->
+      <div v-if="form.sourceMode === 'image' || form.sourceMode === 'frames'" class="frames-row" :class="{ 'single-frame': form.sourceMode === 'image' }">
+        <!-- Start Image -->
+        <div class="asset-block" @dragover.prevent @drop="$emit('start-image-drop', $event)">
+          <div class="asset-head">
+            <span>起始圖片</span>
+            <div class="asset-head-actions">
+              <button
+                v-if="form.image && !expandingImage"
+                class="btn btn-secondary btn-sm"
+                @click="$emit('expand-border', 'start')"
+                title="在圖片四周加上邊距，防止裁切"
+              >🔲 拓展邊界</button>
+              <span v-if="expandingImage === 'start'" class="expanding-hint">拓展中...</span>
+              <button
+                v-if="form.image && form.sourceMode === 'frames'"
+                class="btn btn-secondary btn-sm"
+                @click="$emit('copy-start-to-end')"
+              >📋 套用到結尾</button>
+              <label class="btn btn-secondary btn-sm">
+                上傳圖片
+                <input type="file" accept="image/*" hidden @change="$emit('image-upload', $event)" />
+              </label>
+            </div>
+          </div>
+          <div v-if="imagePreview" class="asset-preview">
+            <img :src="imagePreview" alt="Start frame preview" />
+          </div>
+          <div v-if="form.image" class="expand-options">
+            <label class="form-label" style="font-size:11px;margin-bottom:4px;">邊界填充色</label>
+            <div class="expand-color-row">
+              <button
+                v-for="c in expandColors"
+                :key="c.value"
+                class="color-chip"
+                :class="{ active: expandColor === c.value }"
+                :style="{ background: c.value }"
+                :title="c.label"
+                @click="$emit('update:expandColor', c.value)"
+              />
+            </div>
           </div>
         </div>
-        <div v-if="imagePreview" class="asset-preview">
-          <img :src="imagePreview" alt="Start frame preview" />
-        </div>
-        <div v-if="form.image" class="expand-options">
-          <label class="form-label" style="font-size:11px;margin-bottom:4px;">邊界填充色</label>
-          <div class="expand-color-row">
-            <button
-              v-for="c in expandColors"
-              :key="c.value"
-              class="color-chip"
-              :class="{ active: expandColor === c.value }"
-              :style="{ background: c.value }"
-              :title="c.label"
-              @click="$emit('update:expandColor', c.value)"
-            />
-          </div>
-        </div>
-      </div>
 
-      <!-- End Image Block -->
-      <div v-if="form.sourceMode === 'frames'" class="asset-block" @dragover.prevent @drop="$emit('end-image-drop', $event)">
-        <div class="asset-head">
-          <span>結尾圖片</span>
-          <div class="asset-head-actions">
-            <button
-              v-if="form.lastFrame && !expandingImage"
-              class="btn btn-secondary btn-sm"
-              @click="$emit('expand-border', 'end')"
-              title="在圖片四周加上邊距，防止裁切"
-            >🔲 拓展邊界</button>
-            <span v-if="expandingImage === 'end'" class="expanding-hint">拓展中...</span>
-            <label class="btn btn-secondary btn-sm">
-              上傳結尾圖
-              <input type="file" accept="image/*" hidden @change="$emit('last-frame-upload', $event)" />
-            </label>
+        <!-- End Image -->
+        <div v-if="form.sourceMode === 'frames'" class="asset-block" @dragover.prevent @drop="$emit('end-image-drop', $event)">
+          <div class="asset-head">
+            <span>結尾圖片</span>
+            <div class="asset-head-actions">
+              <button
+                v-if="form.lastFrame && !expandingImage"
+                class="btn btn-secondary btn-sm"
+                @click="$emit('expand-border', 'end')"
+                title="在圖片四周加上邊距，防止裁切"
+              >🔲 拓展邊界</button>
+              <span v-if="expandingImage === 'end'" class="expanding-hint">拓展中...</span>
+              <label class="btn btn-secondary btn-sm">
+                上傳結尾圖
+                <input type="file" accept="image/*" hidden @change="$emit('last-frame-upload', $event)" />
+              </label>
+            </div>
           </div>
-        </div>
-        <div v-if="lastFramePreview" class="asset-preview">
-          <img :src="lastFramePreview" alt="Last frame preview" />
+          <div v-if="lastFramePreview" class="asset-preview">
+            <img :src="lastFramePreview" alt="Last frame preview" />
+          </div>
         </div>
       </div>
 
@@ -376,6 +369,15 @@ defineExpose({
 
 .veo-textarea {
   min-height: 124px;
+}
+
+.frames-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.frames-row.single-frame {
+  grid-template-columns: 1fr;
 }
 
 .asset-block {

@@ -8,7 +8,7 @@
     <div v-if="isOpen" class="asset-drawer">
       <!-- Header -->
       <div class="asset-drawer-header">
-        <span class="asset-drawer-title">🎒 素材囊</span>
+        <span class="asset-drawer-title">素材囊</span>
         <span class="asset-drawer-count">{{ assets.length }} 項</span>
       </div>
 

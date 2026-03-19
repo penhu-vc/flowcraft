@@ -635,6 +635,40 @@ app.get('/api/assets', (_req, res) => {
     }
 })
 
+// ── Asset Library Index (素材囊索引持久化) ──
+const ASSETS_INDEX_FILE = join(SETTINGS_DIR, 'assets-index.json')
+
+function loadAssetsIndex(): any[] {
+    try {
+        if (existsSync(ASSETS_INDEX_FILE)) {
+            return JSON.parse(readFileSync(ASSETS_INDEX_FILE, 'utf-8'))
+        }
+    } catch { /* ignore */ }
+    return []
+}
+
+function saveAssetsIndex(items: any[]) {
+    writeFileSync(ASSETS_INDEX_FILE, JSON.stringify(items, null, 2))
+}
+
+app.get('/api/assets/index', (_req, res) => {
+    res.json({ ok: true, items: loadAssetsIndex() })
+})
+
+app.put('/api/assets/index', (req, res) => {
+    try {
+        const { items } = req.body
+        if (!Array.isArray(items)) {
+            return res.status(400).json({ ok: false, error: 'items array required' })
+        }
+        saveAssetsIndex(items)
+        res.json({ ok: true })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
 // ── Veo Prompt Optimizer ──
 import { optimizeVeoPrompt } from './veo-prompt-optimizer'
 
