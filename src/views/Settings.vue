@@ -56,9 +56,10 @@
                 v-model="geminiApiKey"
                 placeholder="輸入你的 Gemini API Key"
               />
-              <button class="btn btn-secondary" @click="showApiKey = !showApiKey">
+              <button class="btn btn-secondary" @click="toggleShowApiKey">
                 {{ showApiKey ? '🙈' : '👁️' }}
               </button>
+              <button class="btn btn-secondary" @click="copyApiKey" title="複製完整 API Key">📋</button>
               <button class="btn btn-primary" @click="saveGeminiApiKey">💾 儲存</button>
             </div>
           </div>
@@ -160,6 +161,7 @@ import { API_ENDPOINTS } from '../api/config'
 
 const geminiMode = ref<'apiKey' | 'gcp'>('apiKey')
 const geminiApiKey = ref('')
+const geminiFullKey = ref('')
 const showApiKey = ref(false)
 
 const geminiStatus = ref({
@@ -201,6 +203,7 @@ async function checkGeminiStatus() {
           message: 'API Key 已設定'
         }
         geminiApiKey.value = data.maskedKey || ''
+        geminiFullKey.value = data.fullKey || ''
       } else if (data.mode === 'gcp' && data.hasGcp) {
         gcpStatus.value = {
           connected: true,
@@ -224,6 +227,29 @@ async function checkGeminiStatus() {
       connected: false,
       message: '無法連接後端伺服器'
     }
+  }
+}
+
+function toggleShowApiKey() {
+  showApiKey.value = !showApiKey.value
+  if (showApiKey.value && geminiFullKey.value) {
+    geminiApiKey.value = geminiFullKey.value
+  } else if (!showApiKey.value && geminiFullKey.value) {
+    geminiApiKey.value = '****' + geminiFullKey.value.slice(-4)
+  }
+}
+
+async function copyApiKey() {
+  const key = geminiFullKey.value
+  if (!key) {
+    showMessage('沒有可複製的 API Key', 'error')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(key)
+    showMessage('API Key 已複製到剪貼簿！')
+  } catch {
+    showMessage('複製失敗', 'error')
   }
 }
 

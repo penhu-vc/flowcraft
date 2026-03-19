@@ -58,7 +58,16 @@
       "Bash(curl -s \"http://localhost:7860/gradio_api/config\")",
       "Bash(python3 -c \":*)",
       "Bash(curl -s -X POST \"http://localhost:3001/api/infinitetalk/generate\" -H \"Content-Type: application/json\" -d '{\"\"wanGPUrl\"\":\"\"http://localhost:7860\"\",\"\"srcFilePath\"\":\"\"test\"\",\"\"audFilePath\"\":\"\"test\"\"}')",
-      "Bash(curl -s -X POST \"http://localhost:3001/api/infinitetalk/generate\" -H \"Content-Type: application/json\" -d '{\"\"wanGPUrl\"\":\"\"http://localhost:7860\"\",\"\"srcFilePath\"\":\"\"test_path\"\",\"\"audFilePath\"\":\"\"test_audio\"\"}')"
+      "Bash(curl -s -X POST \"http://localhost:3001/api/infinitetalk/generate\" -H \"Content-Type: application/json\" -d '{\"\"wanGPUrl\"\":\"\"http://localhost:7860\"\",\"\"srcFilePath\"\":\"\"test_path\"\",\"\"audFilePath\"\":\"\"test_audio\"\"}')",
+      "Read(//Users/yaja/.claude/**)",
+      "Read(//Users/yaja/.claude/projects/-Users-yaja-projects-flowcraft/memory/**)",
+      "Bash(find /Users/yaja/projects/flowcraft/src -name *.ts -o -name *.tsx)",
+      "Bash(find /Users/yaja/projects/flowcraft/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\) -exec wc -l {} +)",
+      "Bash(find /Users/yaja/projects/flowcraft/server -type f -name *.ts -exec wc -l {} +)",
+      "Bash(find /Users/yaja/projects/flowcraft/scripts -type f -exec wc -l {} +)",
+      "Bash(find /Users/yaja/projects/flowcraft/docs -type f -exec wc -l {} +)",
+      "Bash(find /Users/yaja/projects/flowcraft/server/src -type f -name *.ts -exec wc -l {} +)",
+      "Bash(curl -s http://localhost:55025/api/health)"
     ]
   }
 }
