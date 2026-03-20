@@ -205,7 +205,8 @@ router.get('/settings/saved-prompts', (_req, res) => {
         if (!existsSync(SAVED_PROMPTS_FILE)) {
             return res.json({ ok: true, prompts: [] })
         }
-        const data = JSON.parse(readFileSync(SAVED_PROMPTS_FILE, 'utf-8'))
+        const raw = JSON.parse(readFileSync(SAVED_PROMPTS_FILE, 'utf-8'))
+        const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.prompts) ? raw.prompts : [])
         res.json({ ok: true, prompts: data })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
@@ -235,7 +236,8 @@ router.get('/settings/saved-characters', (_req, res) => {
         if (!existsSync(SAVED_CHARACTERS_FILE)) {
             return res.json({ ok: true, characters: [] })
         }
-        const data = JSON.parse(readFileSync(SAVED_CHARACTERS_FILE, 'utf-8'))
+        const raw = JSON.parse(readFileSync(SAVED_CHARACTERS_FILE, 'utf-8'))
+        const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.characters) ? raw.characters : [])
         res.json({ ok: true, characters: data })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
