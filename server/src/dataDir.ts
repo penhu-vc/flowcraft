@@ -28,6 +28,19 @@ let _config: StorageConfig = {
   nasPath: DEFAULT_NAS_PATH,
 }
 
+// 模組載入時立刻讀取設定，確保 getDataDir() 在任何 import 後都正確
+;(function autoLoad() {
+  try {
+    mkdirSync(LOCAL_DATA_DIR, { recursive: true })
+    if (existsSync(CONFIG_FILE)) {
+      const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'))
+      _config = { ..._config, ...parsed }
+    }
+  } catch {
+    // ignore – 維持預設 local mode
+  }
+})()
+
 export function loadStorageConfig() {
   try {
     mkdirSync(LOCAL_DATA_DIR, { recursive: true })

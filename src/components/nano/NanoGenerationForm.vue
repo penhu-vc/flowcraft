@@ -189,16 +189,126 @@
       </div>
 
       <!-- Reference mode: upload reference images -->
-      <NanoReferencePanel
-        v-if="form.sourceMode === 'reference' && !multiAngle"
-        :reference-images="form.referenceImages"
-        :ref-descriptions="refDescriptions"
-        :optimizer-disabled="optimizerDisabled"
-        @update:reference-images="form.referenceImages = $event"
-        @update:ref-descriptions="$emit('update:refDescriptions', $event)"
-        @open-lightbox="$emit('open-lightbox', $event)"
-        @run-ref-optimizer="$emit('run-ref-optimizer')"
-      />
+      <template v-if="form.sourceMode === 'reference' && !multiAngle">
+        <!-- Reference sub-mode toggle -->
+        <div class="ref-submode-strip">
+          <button class="ref-submode-pill" :class="{ active: refSubMode === 'normal' }" @click="refSubMode = 'normal'">
+            🖼️ 一般參考圖
+          </button>
+          <button class="ref-submode-pill" :class="{ active: refSubMode === 'ai-closeup' }" @click="refSubMode = 'ai-closeup'">
+            🤖 AI 特寫
+          </button>
+        </div>
+
+        <!-- Normal reference panel -->
+        <NanoReferencePanel
+          v-if="refSubMode === 'normal'"
+          :reference-images="form.referenceImages"
+          :ref-descriptions="refDescriptions"
+          :optimizer-disabled="optimizerDisabled"
+          @update:reference-images="form.referenceImages = $event"
+          @update:ref-descriptions="$emit('update:refDescriptions', $event)"
+          @open-lightbox="$emit('open-lightbox', $event)"
+          @run-ref-optimizer="$emit('run-ref-optimizer')"
+        />
+
+        <!-- AI 特寫 panel -->
+        <div v-if="refSubMode === 'ai-closeup'" class="ai-closeup-panel">
+
+          <!-- Sub-mode toggle -->
+          <div class="aic-submode-strip">
+            <button class="aic-submode-pill" :class="{ active: aicSubMode === 'subjects' }" @click="aicSubMode = 'subjects'">
+              🔍 分析主體
+            </button>
+            <button class="aic-submode-pill" :class="{ active: aicSubMode === 'angles' }" @click="aicSubMode = 'angles'">
+              📐 不同角度
+            </button>
+          </div>
+
+          <!-- Step 1: Upload scene image -->
+          <div class="aic-step">
+            <div class="aic-step-label">① 上傳場景圖</div>
+            <label v-if="!aiCloseupImage" class="aic-upload-slot" @dragover.prevent @drop="onAicDrop">
+              <span class="aic-upload-plus">+</span>
+              <span class="aic-upload-hint">上傳場景參考圖 / 拖曳</span>
+              <input type="file" accept="image/*" hidden @change="onAicImageUpload" />
+            </label>
+            <div v-else class="aic-preview-row">
+              <img :src="aiCloseupImage.previewUrl" class="aic-preview-img" @click="$emit('open-lightbox', aiCloseupImage.previewUrl!)" />
+              <div class="aic-preview-actions">
+                <button class="btn btn-secondary btn-sm" @click="aiCloseupImage = null; detectedSubjects = []">🗑 換圖</button>
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="analyzingSubjects"
+                  @click="onAnalyzeSubjects"
+                >
+                  {{ analyzingSubjects ? '🔍 分析中...' : '🔍 分析主體' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 分析主體 Step 2 -->
+          <template v-if="aicSubMode === 'subjects'">
+            <div v-if="detectedSubjects.length > 0" class="aic-step">
+              <div class="aic-step-label">
+                ② 選擇要特寫的主體
+                <span class="aic-selected-count">已選 {{ selectedSubjectIds.size }} / {{ detectedSubjects.length }}</span>
+              </div>
+              <div class="aic-subjects-grid">
+                <label
+                  v-for="subject in detectedSubjects"
+                  :key="subject.id"
+                  class="aic-subject-card"
+                  :class="{ selected: selectedSubjectIds.has(subject.id) }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedSubjectIds.has(subject.id)"
+                    @change="toggleSubject(subject.id)"
+                  />
+                  <div class="aic-subject-body">
+                    <div class="aic-subject-name">{{ subject.name }}</div>
+                    <div class="aic-subject-desc">{{ subject.description }}</div>
+                  </div>
+                </label>
+              </div>
+              <div class="aic-select-actions">
+                <button class="btn btn-secondary btn-sm" @click="selectAllSubjects">全選</button>
+                <button class="btn btn-secondary btn-sm" @click="selectedSubjectIds.clear()">清除</button>
+              </div>
+            </div>
+            <div v-if="analyzingSubjects" class="aic-analyzing">
+              <div class="aic-spinner" />
+              <span>AI 正在分析場景主體...</span>
+            </div>
+          </template>
+
+          <!-- 不同角度 Step 2 -->
+          <div v-if="aicSubMode === 'angles'" class="aic-step">
+            <div class="aic-step-label">
+              ② 選擇角度
+              <span class="aic-selected-count">已選 {{ sceneAngleShots.filter(s => s.enabled).length }} 個</span>
+            </div>
+            <div class="aic-angle-grid">
+              <label
+                v-for="shot in sceneAngleShots"
+                :key="shot.key"
+                class="aic-angle-card"
+                :class="{ selected: shot.enabled }"
+              >
+                <input type="checkbox" v-model="shot.enabled" />
+                <span class="aic-angle-icon">{{ shot.icon }}</span>
+                <span class="aic-angle-label">{{ shot.label }}</span>
+              </label>
+            </div>
+            <div class="aic-select-actions">
+              <button class="btn btn-secondary btn-sm" @click="sceneAngleShots.forEach(s => s.enabled = true)">全選</button>
+              <button class="btn btn-secondary btn-sm" @click="sceneAngleShots.forEach(s => s.enabled = false)">清除</button>
+            </div>
+          </div>
+        </div>
+      </template>
 
       <!-- ── 多角度模式（從歷史卡片觸發時才顯示，獨立於其他模式） ── -->
       <div v-if="multiAngle" class="multi-angle-section">
@@ -258,21 +368,44 @@
 
       <div class="submit-row">
         <p class="hint">{{ submitHint }}</p>
+        <!-- AI 特寫模式 submit -->
+        <template v-if="form.sourceMode === 'reference' && refSubMode === 'ai-closeup' && !multiAngle">
+          <!-- 分析主體 submit -->
+          <button
+            v-if="aicSubMode === 'subjects'"
+            class="btn btn-primary"
+            :disabled="submitting || !aiCloseupImage || selectedSubjectIds.size === 0"
+            @click="onAiCloseupSubmit"
+          >
+            {{ submitting ? '生成中...' : `🔍 生成 ${selectedSubjectIds.size} 個特寫` }}
+          </button>
+          <!-- 不同角度 submit -->
+          <button
+            v-else
+            class="btn btn-primary"
+            :disabled="submitting || !aiCloseupImage || !sceneAngleShots.some(s => s.enabled)"
+            @click="onAiAnglesSubmit"
+          >
+            {{ submitting ? '生成中...' : `📐 生成 ${sceneAngleShots.filter(s => s.enabled).length} 個角度` }}
+          </button>
+        </template>
+        <!-- 多角度 submit -->
         <button
-          v-if="!multiAngle"
-          class="btn btn-primary"
-          :disabled="submitting || !canSubmit"
-          @click="$emit('submit')"
-        >
-          {{ submitting ? '生成中...' : '🎨 生成圖片' }}
-        </button>
-        <button
-          v-else
+          v-else-if="multiAngle"
           class="btn btn-primary"
           :disabled="submitting || !canSubmit || !angleShots.some(s => s.enabled)"
           @click="onMultiAngleSubmit"
         >
           {{ submitting ? '分析並生成中...' : `📐 生成 ${angleShots.filter(s => s.enabled).length} 個角度` }}
+        </button>
+        <!-- 一般 submit -->
+        <button
+          v-else
+          class="btn btn-primary"
+          :disabled="submitting || !canSubmit"
+          @click="$emit('submit')"
+        >
+          {{ submitting ? '生成中...' : '🎨 生成圖片' }}
         </button>
       </div>
 
@@ -296,7 +429,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { NanoInlineAsset, NanoSourceMode } from '../../api/nano'
+import type { NanoInlineAsset, NanoSourceMode, SceneSubject } from '../../api/nano'
+import { analyzeNanoSubjects } from '../../api/nano'
 import NanoMaskEditor from './NanoMaskEditor.vue'
 import NanoOutpaintPreview from './NanoOutpaintPreview.vue'
 import NanoReferencePanel from './NanoReferencePanel.vue'
@@ -332,6 +466,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'submit'): void
   (e: 'submit-multi-angle', shots: { key: string; label: string; extraPrompt: string; refImage: NanoInlineAsset | null }[]): void
+  (e: 'submit-ai-closeup', subjects: SceneSubject[], image: NanoInlineAsset): void
   (e: 'switch-mode', mode: NanoSourceMode): void
   (e: 'image-uploaded', asset: NanoInlineAsset, size: { width: number; height: number }, closestRatio: string): void
   (e: 'one-click-remove'): void
@@ -344,6 +479,136 @@ const emit = defineEmits<{
 // ── Sub-component refs ──
 const maskEditorRef = ref<InstanceType<typeof NanoMaskEditor> | null>(null)
 const outpaintPreviewRef = ref<InstanceType<typeof NanoOutpaintPreview> | null>(null)
+
+// ── Reference sub-mode ──
+const refSubMode = ref<'normal' | 'ai-closeup'>('normal')
+
+// ── AI 特寫 sub-mode ──
+const aicSubMode = ref<'subjects' | 'angles'>('subjects')
+
+// ── AI 特寫 state ──
+const aiCloseupImage = ref<NanoInlineAsset | null>(null)
+const analyzingSubjects = ref(false)
+const detectedSubjects = ref<SceneSubject[]>([])
+const selectedSubjectIds = ref(new Set<string>())
+
+async function onAicImageUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  aiCloseupImage.value = await fileToAsset(file)
+  detectedSubjects.value = []
+  selectedSubjectIds.value.clear()
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+async function onAicDrop(e: DragEvent) {
+  e.preventDefault()
+
+  // 原生檔案拖曳（從 OS / 資料夾）
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    const file = Array.from(files).find(f => f.type.startsWith('image/'))
+    if (file) {
+      aiCloseupImage.value = await fileToAsset(file)
+      detectedSubjects.value = []
+      selectedSubjectIds.value.clear()
+      return
+    }
+  }
+
+  // 內部素材囊拖曳（application/x-flowcraft-asset）
+  const dropped = getDroppedAssetData(e)
+  if (!dropped?.url) return
+  const { url, mime } = dropped
+  aiCloseupImage.value = await urlToAsset(url, mime)
+  detectedSubjects.value = []
+  selectedSubjectIds.value.clear()
+}
+
+async function onAnalyzeSubjects() {
+  if (!aiCloseupImage.value) return
+  analyzingSubjects.value = true
+  detectedSubjects.value = []
+  selectedSubjectIds.value.clear()
+  try {
+    const result = await analyzeNanoSubjects(aiCloseupImage.value)
+    detectedSubjects.value = result.subjects
+    // 預設全選
+    selectedSubjectIds.value = new Set(result.subjects.map(s => s.id))
+  } finally {
+    analyzingSubjects.value = false
+  }
+}
+
+function toggleSubject(id: string) {
+  if (selectedSubjectIds.value.has(id)) {
+    selectedSubjectIds.value.delete(id)
+  } else {
+    selectedSubjectIds.value.add(id)
+  }
+  // Trigger reactivity
+  selectedSubjectIds.value = new Set(selectedSubjectIds.value)
+}
+
+function selectAllSubjects() {
+  selectedSubjectIds.value = new Set(detectedSubjects.value.map(s => s.id))
+}
+
+function onAiCloseupSubmit() {
+  if (!aiCloseupImage.value || selectedSubjectIds.value.size === 0) return
+  const selected = detectedSubjects.value.filter(s => selectedSubjectIds.value.has(s.id))
+  emit('submit-ai-closeup', selected, aiCloseupImage.value)
+}
+
+function onAiAnglesSubmit() {
+  const enabled = sceneAngleShots.value.filter(s => s.enabled)
+  if (!aiCloseupImage.value || enabled.length === 0) return
+  const shots = enabled.map(s => ({
+    key: s.key,
+    label: s.label,
+    extraPrompt: s.prompt,
+    refImage: null as NanoInlineAsset | null,
+  }))
+  // 把場景圖放進 form.referenceImages 然後走多角度流程
+  props.form.referenceImages = [aiCloseupImage.value]
+  emit('submit-multi-angle', shots)
+}
+
+// ── 場景角度選項（適合場景，不限角色）──
+interface SceneAngleShot {
+  key: string
+  icon: string
+  label: string
+  prompt: string
+  enabled: boolean
+}
+
+const sceneAngleShots = ref<SceneAngleShot[]>([
+  { key: 'front',               icon: '⬜', label: '正面',   enabled: true,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera positioned directly in front of the scene at eye level, straight-on frontal shot. All scene elements, lighting, and atmosphere remain identical.' },
+  { key: 'left-side',           icon: '◁',  label: '左側面', enabled: true,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera repositioned to the far left side of the scene, 90 degrees lateral view. All scene elements, props, and lighting are identical, seen from the left profile.' },
+  { key: 'right-side',          icon: '▷',  label: '右側面', enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera repositioned to the far right side of the scene, 90 degrees lateral view. All scene elements, props, and lighting are identical, seen from the right profile.' },
+  { key: 'back',                icon: '🔙', label: '背面',   enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera moved to the back of the scene looking forward, showing what is behind the original viewpoint. All scene elements remain unchanged, reverse perspective.' },
+  { key: 'three-quarter-left',  icon: '↖️', label: '左斜前', enabled: true,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera positioned at a 45-degree angle from the front-left corner. All scene contents identical, three-quarter left diagonal perspective.' },
+  { key: 'three-quarter-right', icon: '↗️', label: '右斜前', enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera positioned at a 45-degree angle from the front-right corner. All scene contents identical, three-quarter right diagonal perspective.' },
+  { key: 'bird-eye',            icon: '🦅', label: '鳥瞰',   enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera placed directly overhead looking straight down at the scene from above. Top-down aerial perspective, all scene elements are identical but seen from a bird\'s eye view.' },
+  { key: 'high-angle',          icon: '⬇️', label: '高角度', enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera elevated high and tilted downward at 45 degrees onto the scene. Overhead oblique perspective, all scene contents unchanged.' },
+  { key: 'low-angle',           icon: '⬆️', label: '低角度', enabled: false,
+    prompt: 'The exact same scene and environment, only the camera viewpoint changes. Camera placed very low near ground level pointing upward at the scene. Ground-level perspective looking up, all scene elements identical.' },
+  { key: 'wide',                icon: '🌅', label: '遠景',   enabled: true,
+    prompt: 'The exact same scene and environment, only the camera distance changes. Camera pulled far back to capture the entire scene as a wide establishing shot, showing the full environment and surroundings.' },
+  { key: 'medium',              icon: '📸', label: '中景',   enabled: false,
+    prompt: 'The exact same scene and environment, only the camera distance changes. Camera at a moderate distance, medium shot showing the main scene elements centered in frame.' },
+  { key: 'close-detail',        icon: '🔍', label: '細節特寫', enabled: false,
+    prompt: 'The exact same scene and environment, camera zoomed in close to capture fine details and textures within the scene. Extreme close-up of a key environmental element, all scene materials and atmosphere identical.' },
+])
 
 // ── Multi-angle mode ──
 const multiAngle = ref(false)
@@ -936,6 +1201,226 @@ defineExpose({
 }
 .ma-shot-pill.active { border-color: var(--accent); background: rgba(139,92,246,0.15); color: var(--accent); }
 .ma-warn { font-size: 12px; color: #f59e0b; }
+
+/* ── AI 特寫 sub-mode strip ── */
+.aic-submode-strip {
+  display: flex;
+  gap: 6px;
+}
+.aic-submode-pill {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.aic-submode-pill.active,
+.aic-submode-pill:hover {
+  color: var(--text-primary);
+  border-color: rgba(139,92,246,0.4);
+  background: rgba(139,92,246,0.12);
+}
+
+/* ── 角度選擇網格 ── */
+.aic-angle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.aic-angle-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0.6;
+  font-size: 12px;
+}
+.aic-angle-card.selected {
+  opacity: 1;
+  border-color: rgba(139,92,246,0.5);
+  background: rgba(139,92,246,0.1);
+}
+.aic-angle-card input[type=checkbox] {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.aic-angle-icon { font-size: 14px; }
+.aic-angle-label { color: var(--text-primary); white-space: nowrap; }
+
+/* ── Reference sub-mode strip ── */
+.ref-submode-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.ref-submode-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.ref-submode-pill.active,
+.ref-submode-pill:hover {
+  color: var(--text-primary);
+  border-color: rgba(6, 182, 212, 0.35);
+  background: rgba(6, 182, 212, 0.14);
+}
+
+/* ── AI 特寫 Panel ── */
+.ai-closeup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.aic-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.aic-step-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.aic-selected-count {
+  font-weight: 400;
+  color: var(--accent);
+  font-size: 11px;
+  background: rgba(139,92,246,0.15);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.aic-upload-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 110px;
+  border: 2px dashed rgba(255,255,255,0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  background: transparent;
+}
+.aic-upload-slot:hover {
+  border-color: rgba(6,182,212,0.5);
+  background: rgba(6,182,212,0.06);
+}
+.aic-upload-plus {
+  font-size: 26px;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+.aic-upload-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.aic-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.aic-preview-img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.aic-preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aic-subjects-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.aic-subject-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0.65;
+}
+.aic-subject-card.selected {
+  opacity: 1;
+  border-color: rgba(6,182,212,0.5);
+  background: rgba(6,182,212,0.08);
+}
+.aic-subject-card input[type=checkbox] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.aic-subject-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.aic-subject-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.aic-subject-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.aic-select-actions {
+  display: flex;
+  gap: 6px;
+}
+.aic-analyzing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(6,182,212,0.06);
+  border: 1px solid rgba(6,182,212,0.2);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.aic-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(6,182,212,0.2);
+  border-top-color: rgba(6,182,212,0.8);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
 
 /* ── Submit row ── */
 .submit-row {

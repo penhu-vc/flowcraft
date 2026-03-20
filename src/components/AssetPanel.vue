@@ -98,6 +98,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAssetLibrary, type AssetItem } from '../composables/useAssetLibrary'
+import { API_BASE_URL } from '../api/config'
 
 const { assets, addAsset, removeAsset, clearAll } = useAssetLibrary()
 const isOpen = ref(false)
@@ -137,8 +138,6 @@ function onDragStart(e: DragEvent, asset: AssetItem) {
   e.dataTransfer.effectAllowed = 'copy'
 }
 
-const API_BASE = 'http://localhost:3001'
-
 async function processFiles(files: File[]) {
   for (const file of files) {
     const isVideo = file.type.startsWith('video/')
@@ -156,7 +155,7 @@ async function processFiles(files: File[]) {
     const reader = new FileReader()
     const base64 = await new Promise<string>(r => { reader.onload = () => r(reader.result as string); reader.readAsDataURL(file) })
     try {
-      const resp = await fetch(`${API_BASE}/api/assets/upload`, {
+      const resp = await fetch(`${API_BASE_URL}/api/assets/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),

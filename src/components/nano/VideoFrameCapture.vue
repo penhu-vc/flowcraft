@@ -1,23 +1,33 @@
 <template>
   <div v-if="visible" class="vfc-panel">
     <div class="vfc-header">
-      <span>🎬 影片擷取</span>
+      <span>{{ mode === 'image' ? '🖼️ 圖片擷取' : '🎬 影片擷取' }}</span>
       <div class="vfc-header-actions">
-        <button v-if="videoSrc" class="vfc-btn-change" @click="changeVideo">🔄 換影片</button>
+        <button v-if="videoSrc || imageSrc" class="vfc-btn-change" @click="resetMedia">🔄 換{{ mode === 'image' ? '圖片' : '影片' }}</button>
         <button class="vfc-close" @click="$emit('close')">✕</button>
       </div>
     </div>
 
-    <!-- Upload area -->
-    <label v-if="!videoSrc" class="vfc-upload-zone">
+    <!-- Upload area: video mode -->
+    <label v-if="mode === 'video' && !videoSrc" class="vfc-upload-zone"
+      @dragover.prevent @drop.prevent="onZoneDrop">
       <input type="file" accept="video/*" hidden @change="onVideoUpload" />
       <span class="vfc-upload-icon">📹</span>
       <span class="vfc-upload-text">上傳影片</span>
-      <span class="vfc-upload-hint">支援 MP4, WebM, MOV</span>
+      <span class="vfc-upload-hint">MP4, WebM, MOV · 或從素材囊拖曳</span>
     </label>
 
-    <!-- Player -->
-    <template v-if="videoSrc">
+    <!-- Upload area: image mode -->
+    <label v-if="mode === 'image' && !imageSrc" class="vfc-upload-zone"
+      @dragover.prevent @drop.prevent="onZoneDrop">
+      <input type="file" accept="image/*" hidden @change="onImageUpload" />
+      <span class="vfc-upload-icon">🖼️</span>
+      <span class="vfc-upload-text">上傳圖片</span>
+      <span class="vfc-upload-hint">JPG, PNG, WebP · 或從素材囊拖曳</span>
+    </label>
+
+    <!-- Video Player -->
+    <template v-if="mode === 'video' && videoSrc">
       <div class="vfc-player-wrap" ref="playerWrapRef">
         <video
           ref="videoRef"
@@ -28,74 +38,55 @@
           @play="isPlaying = true"
           @pause="isPlaying = false"
         />
-        <!-- Crop overlay -->
-        <canvas
-          v-if="cropEnabled"
-          ref="cropCanvasRef"
-          class="vfc-crop-overlay"
-          @pointerdown="onCropPointerDown"
-          @pointermove="onCropPointerMove"
-          @pointerup="onCropPointerUp"
-        />
+        <canvas v-if="cropEnabled" ref="cropCanvasRef" class="vfc-crop-overlay"
+          @pointerdown="onCropPointerDown" @pointermove="onCropPointerMove" @pointerup="onCropPointerUp" />
       </div>
-
-      <!-- Transport controls -->
       <div class="vfc-transport">
         <button class="vfc-btn" @click="stepFrame(-1)" title="上一幀">⏮</button>
         <button class="vfc-btn vfc-btn-play" @click="togglePlay">{{ isPlaying ? '⏸' : '▶' }}</button>
         <button class="vfc-btn" @click="stepFrame(1)" title="下一幀">⏭</button>
-        <input
-          type="range"
-          class="vfc-timeline"
-          min="0"
-          :max="duration"
-          step="0.001"
-          :value="currentTime"
-          @input="seekTo(($event.target as HTMLInputElement).value)"
-        />
-        <span class="vfc-time">
-          {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-          <span class="vfc-frame">F{{ currentFrame }}</span>
-        </span>
+        <input type="range" class="vfc-timeline" min="0" :max="duration" step="0.001" :value="currentTime"
+          @input="seekTo(($event.target as HTMLInputElement).value)" />
+        <span class="vfc-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}<span class="vfc-frame">F{{ currentFrame }}</span></span>
       </div>
-
-      <!-- Controls row -->
       <div class="vfc-controls-row">
         <div class="vfc-fps-group">
           <label>FPS</label>
           <select v-model.number="fps" class="vfc-select">
-            <option :value="24">24</option>
-            <option :value="25">25</option>
-            <option :value="30">30</option>
-            <option :value="60">60</option>
+            <option :value="24">24</option><option :value="25">25</option>
+            <option :value="30">30</option><option :value="60">60</option>
           </select>
         </div>
-
-        <label class="vfc-crop-toggle">
-          <input type="checkbox" v-model="cropEnabled" />
-          <span>裁切模式</span>
-        </label>
-
+        <label class="vfc-crop-toggle"><input type="checkbox" v-model="cropEnabled" /><span>裁切模式</span></label>
         <div v-if="cropEnabled" class="vfc-ratio-pills">
-          <button
-            v-for="r in ratioPresets"
-            :key="r.value"
-            class="vfc-ratio-pill"
-            :class="{ active: cropRatio === r.value }"
-            @click="setCropRatio(r.value)"
-          >{{ r.label }}</button>
+          <button v-for="r in ratioPresets" :key="r.value" class="vfc-ratio-pill"
+            :class="{ active: cropRatio === r.value }" @click="setCropRatio(r.value)">{{ r.label }}</button>
         </div>
       </div>
-
-      <!-- Capture buttons -->
       <div class="vfc-capture-row">
-        <button class="btn btn-primary" @click="captureFrame">
-          📸 擷取{{ cropEnabled ? '裁切區域' : '完整畫面' }}
-        </button>
-        <button class="btn btn-secondary vfc-btn-portrait" @click="capturePortrait">
-          👤 人像擷取
-        </button>
+        <button class="btn btn-primary" @click="captureFrame">📸 擷取{{ cropEnabled ? '裁切區域' : '完整畫面' }}</button>
+        <button class="btn btn-secondary vfc-btn-portrait" @click="capturePortrait">👤 人像擷取</button>
         <span v-if="captureCount > 0" class="vfc-capture-count">已擷取 {{ captureCount }} 張</span>
+      </div>
+    </template>
+
+    <!-- Image viewer -->
+    <template v-if="mode === 'image' && imageSrc">
+      <div class="vfc-player-wrap" ref="playerWrapRef">
+        <img ref="imageRef" :src="imageSrc" class="vfc-image-el" @load="onImageLoad" />
+        <canvas v-if="cropEnabled" ref="cropCanvasRef" class="vfc-crop-overlay"
+          @pointerdown="onCropPointerDown" @pointermove="onCropPointerMove" @pointerup="onCropPointerUp" />
+      </div>
+      <div class="vfc-controls-row">
+        <label class="vfc-crop-toggle"><input type="checkbox" v-model="cropEnabled" /><span>裁切模式</span></label>
+        <div v-if="cropEnabled" class="vfc-ratio-pills">
+          <button v-for="r in ratioPresets" :key="r.value" class="vfc-ratio-pill"
+            :class="{ active: cropRatio === r.value }" @click="setCropRatio(r.value)">{{ r.label }}</button>
+        </div>
+      </div>
+      <div class="vfc-capture-row">
+        <button class="btn btn-primary" @click="captureImageFrame">✅ {{ cropEnabled ? '裁切後加入' : '加入參考圖' }}</button>
+        <span v-if="captureCount > 0" class="vfc-capture-count">已加入 {{ captureCount }} 張</span>
       </div>
     </template>
   </div>
@@ -104,7 +95,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 
-defineProps<{ visible: boolean }>()
+const props = defineProps<{ visible: boolean; mode?: 'video' | 'image' }>()
 const emit = defineEmits<{
   (e: 'capture', payload: { base64: string; mimeType: string }): void
   (e: 'capture-portrait', payload: { base64: string; mimeType: string }): void
@@ -112,7 +103,10 @@ const emit = defineEmits<{
 }>()
 
 const videoSrc = ref('')
+const imageSrc = ref('')
+const imageMime = ref('image/jpeg')
 const videoRef = ref<HTMLVideoElement | null>(null)
+const imageRef = ref<HTMLImageElement | null>(null)
 const playerWrapRef = ref<HTMLElement | null>(null)
 const cropCanvasRef = ref<HTMLCanvasElement | null>(null)
 
@@ -147,6 +141,84 @@ const ratioPresets = [
 
 let resizeObserver: ResizeObserver | null = null
 
+function resetMedia() {
+  if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
+  videoSrc.value = ''
+  imageSrc.value = ''
+  captureCount.value = 0
+  cropEnabled.value = false
+}
+
+function onImageUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  imageMime.value = file.type || 'image/jpeg'
+  const reader = new FileReader()
+  reader.onload = () => { imageSrc.value = String(reader.result) }
+  reader.readAsDataURL(file)
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+function onImageLoad() {
+  nextTick(() => {
+    setupResizeObserver()
+    drawCropOverlay()
+  })
+}
+
+async function captureImageFrame() {
+  const img = imageRef.value
+  if (!img) return
+  const fullCanvas = document.createElement('canvas')
+  fullCanvas.width = img.naturalWidth
+  fullCanvas.height = img.naturalHeight
+  fullCanvas.getContext('2d')!.drawImage(img, 0, 0)
+  let resultCanvas = fullCanvas
+  if (cropEnabled.value) {
+    const { x, y, w, h } = cropBox.value
+    resultCanvas = document.createElement('canvas')
+    resultCanvas.width = Math.round(w)
+    resultCanvas.height = Math.round(h)
+    resultCanvas.getContext('2d')!.drawImage(fullCanvas, Math.round(x), Math.round(y), Math.round(w), Math.round(h), 0, 0, Math.round(w), Math.round(h))
+  }
+  const base64 = resultCanvas.toDataURL('image/png')
+  emit('capture', { base64, mimeType: 'image/png' })
+  captureCount.value++
+}
+
+async function onZoneDrop(e: DragEvent) {
+  const isImageMode = props.mode === 'image'
+  // 1. 原生檔案
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    if (isImageMode) {
+      const img = Array.from(files).find(f => f.type.startsWith('image/'))
+      if (img) { imageMime.value = img.type; const r = new FileReader(); r.onload = () => { imageSrc.value = String(r.result) }; r.readAsDataURL(img) }
+    } else {
+      const video = Array.from(files).find(f => f.type.startsWith('video/'))
+      if (video) { if (videoSrc.value) URL.revokeObjectURL(videoSrc.value); videoSrc.value = URL.createObjectURL(video); captureCount.value = 0 }
+    }
+    return
+  }
+  // 2. 素材囊
+  const raw = e.dataTransfer?.getData('application/x-flowcraft-asset')
+  if (raw) {
+    try {
+      const asset = JSON.parse(raw) as { url?: string; mimeType?: string; type?: string }
+      const url = asset.url; const mime = asset.mimeType || ''
+      if (!url) return
+      const resp = await fetch(url); const blob = await resp.blob()
+      if (isImageMode && (mime.startsWith('image/') || asset.type === 'image')) {
+        imageMime.value = blob.type || 'image/jpeg'
+        const r = new FileReader(); r.onload = () => { imageSrc.value = String(r.result) }; r.readAsDataURL(blob)
+      } else if (!isImageMode && (mime.startsWith('video/') || asset.type === 'video')) {
+        if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
+        videoSrc.value = URL.createObjectURL(blob); captureCount.value = 0
+      }
+    } catch (err) { console.error('Drop failed:', err) }
+  }
+}
+
 function onVideoUpload(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -155,12 +227,8 @@ function onVideoUpload(e: Event) {
   captureCount.value = 0
 }
 
-function changeVideo() {
-  if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
-  videoSrc.value = ''
-  cropEnabled.value = false
-  captureCount.value = 0
-}
+
+function changeVideo() { resetMedia() }
 
 function onMetadata() {
   const v = videoRef.value!
@@ -203,30 +271,33 @@ function formatTime(t: number): string {
   return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`
 }
 
-// ── Video rendering rect (accounts for object-fit: contain) ──────
+// ── Media helpers (works for both video and image modes) ──────────
 
-function getVideoRect(): { ox: number; oy: number; rw: number; rh: number } {
+function getMediaNaturalSize(): { nw: number; nh: number } {
+  if (props.mode === 'image') {
+    const img = imageRef.value
+    return img ? { nw: img.naturalWidth, nh: img.naturalHeight } : { nw: 1, nh: 1 }
+  }
   const v = videoRef.value
-  if (!v) return { ox: 0, oy: 0, rw: 1, rh: 1 }
-  const cw = v.clientWidth
-  const ch = v.clientHeight
-  const vw = v.videoWidth
-  const vh = v.videoHeight
-  const videoAR = vw / vh
+  return v ? { nw: v.videoWidth, nh: v.videoHeight } : { nw: 1, nh: 1 }
+}
+
+function getMediaClientSize(): { cw: number; ch: number } {
+  const el = (props.mode === 'image' ? imageRef.value : videoRef.value) as HTMLElement | null
+  return el ? { cw: el.clientWidth, ch: el.clientHeight } : { cw: 1, ch: 1 }
+}
+
+// Rendering rect inside element (accounts for object-fit: contain)
+function getVideoRect(): { ox: number; oy: number; rw: number; rh: number } {
+  const { nw, nh } = getMediaNaturalSize()
+  const { cw, ch } = getMediaClientSize()
+  const mediaAR = nw / nh
   const elemAR = cw / ch
   let rw: number, rh: number, ox: number, oy: number
-  if (videoAR > elemAR) {
-    // Letterbox top/bottom
-    rw = cw
-    rh = cw / videoAR
-    ox = 0
-    oy = (ch - rh) / 2
+  if (mediaAR > elemAR) {
+    rw = cw; rh = cw / mediaAR; ox = 0; oy = (ch - rh) / 2
   } else {
-    // Pillarbox left/right
-    rh = ch
-    rw = ch * videoAR
-    ox = (cw - rw) / 2
-    oy = 0
+    rh = ch; rw = ch * mediaAR; ox = (cw - rw) / 2; oy = 0
   }
   return { ox, oy, rw, rh }
 }
@@ -234,16 +305,9 @@ function getVideoRect(): { ox: number; oy: number; rw: number; rh: number } {
 // ── Crop Box ──────────────────────────────────────────────────────
 
 function initCropBox() {
-  const v = videoRef.value
-  if (!v) return
-  const vw = v.videoWidth
-  const vh = v.videoHeight
-  cropBox.value = {
-    x: vw * 0.15,
-    y: vh * 0.15,
-    w: vw * 0.7,
-    h: vh * 0.7,
-  }
+  const { nw, nh } = getMediaNaturalSize()
+  if (!nw || !nh) return
+  cropBox.value = { x: nw * 0.15, y: nh * 0.15, w: nw * 0.7, h: nh * 0.7 }
 }
 
 function setCropRatio(ratio: string) {
@@ -251,21 +315,19 @@ function setCropRatio(ratio: string) {
   if (ratio === 'free') { drawCropOverlay(); return }
   const [rw, rh] = ratio.split(':').map(Number)
   const targetAR = rw / rh
-  const v = videoRef.value!
-  const vw = v.videoWidth
-  const vh = v.videoHeight
+  const { nw, nh } = getMediaNaturalSize()
   const b = cropBox.value
   const cx = b.x + b.w / 2
   const cy = b.y + b.h / 2
-  let nw = b.w
-  let nh = nw / targetAR
-  if (nh > vh * 0.9) { nh = vh * 0.9; nw = nh * targetAR }
-  if (nw > vw * 0.9) { nw = vw * 0.9; nh = nw / targetAR }
+  let nwb = b.w
+  let nhb = nwb / targetAR
+  if (nhb > nh * 0.9) { nhb = nh * 0.9; nwb = nhb * targetAR }
+  if (nwb > nw * 0.9) { nwb = nw * 0.9; nhb = nwb / targetAR }
   cropBox.value = {
-    x: Math.max(0, Math.min(vw - nw, cx - nw / 2)),
-    y: Math.max(0, Math.min(vh - nh, cy - nh / 2)),
-    w: nw,
-    h: nh,
+    x: Math.max(0, Math.min(nw - nwb, cx - nwb / 2)),
+    y: Math.max(0, Math.min(nh - nhb, cy - nhb / 2)),
+    w: nwb,
+    h: nhb,
   }
   drawCropOverlay()
 }
@@ -273,29 +335,23 @@ function setCropRatio(ratio: string) {
 const HANDLE_SIZE = 8
 
 function videoToCanvas(vx: number, vy: number): { cx: number; cy: number } {
-  const v = videoRef.value!
+  const { nw, nh } = getMediaNaturalSize()
   const { ox, oy, rw, rh } = getVideoRect()
-  return {
-    cx: ox + (vx / v.videoWidth) * rw,
-    cy: oy + (vy / v.videoHeight) * rh,
-  }
+  return { cx: ox + (vx / nw) * rw, cy: oy + (vy / nh) * rh }
 }
 
 function canvasToVideo(cx: number, cy: number): { vx: number; vy: number } {
-  const v = videoRef.value!
+  const { nw, nh } = getMediaNaturalSize()
   const { ox, oy, rw, rh } = getVideoRect()
-  return {
-    vx: ((cx - ox) / rw) * v.videoWidth,
-    vy: ((cy - oy) / rh) * v.videoHeight,
-  }
+  return { vx: ((cx - ox) / rw) * nw, vy: ((cy - oy) / rh) * nh }
 }
 
 function drawCropOverlay() {
   const canvas = cropCanvasRef.value
-  const v = videoRef.value
-  if (!canvas || !v) return
-  canvas.width = v.clientWidth
-  canvas.height = v.clientHeight
+  const mediaEl = props.mode === 'image' ? imageRef.value : videoRef.value
+  if (!canvas || !mediaEl) return
+  canvas.width = (mediaEl as HTMLElement).clientWidth
+  canvas.height = (mediaEl as HTMLElement).clientHeight
   const ctx = canvas.getContext('2d')!
   const b = cropBox.value
 
@@ -379,12 +435,9 @@ function onCropPointerDown(e: PointerEvent) {
 }
 
 function canvasDeltaToVideo(dcx: number, dcy: number): { dvx: number; dvy: number } {
-  const v = videoRef.value!
+  const { nw, nh } = getMediaNaturalSize()
   const { rw, rh } = getVideoRect()
-  return {
-    dvx: (dcx / rw) * v.videoWidth,
-    dvy: (dcy / rh) * v.videoHeight,
-  }
+  return { dvx: (dcx / rw) * nw, dvy: (dcy / rh) * nh }
 }
 
 function onCropPointerMove(e: PointerEvent) {
@@ -406,9 +459,7 @@ function onCropPointerMove(e: PointerEvent) {
     e.clientY - dragState.value.startY,
   )
   const sb = dragState.value.startBox
-  const v = videoRef.value!
-  const vw = v.videoWidth
-  const vh = v.videoHeight
+  const { nw: vw, nh: vh } = getMediaNaturalSize()
 
   if (dragState.value.type === 'move') {
     cropBox.value = {
@@ -467,8 +518,7 @@ function setupResizeObserver() {
 
 watch(cropEnabled, (v) => {
   if (v) {
-    initCropBox()
-    nextTick(drawCropOverlay)
+    nextTick(() => { initCropBox(); drawCropOverlay() })
   }
 })
 
@@ -566,6 +616,13 @@ onBeforeUnmount(() => {
 .vfc-close:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary, #fff);
+}
+
+.vfc-image-el {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
 }
 
 /* Upload zone */

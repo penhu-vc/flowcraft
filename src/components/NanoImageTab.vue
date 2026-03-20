@@ -24,6 +24,7 @@
       :multi-angle-source-url="multiAngleSourceUrl"
       @submit="submit"
       @submit-multi-angle="submitMultiAngle"
+      @submit-ai-closeup="submitAiCloseup"
       @switch-mode="switchMode"
       @image-uploaded="onImageUploaded"
       @one-click-remove="oneClickRemove"
@@ -70,6 +71,7 @@ import {
   type NanoJob,
   type NanoSourceMode,
   type NanoUiStateSnapshot,
+  type SceneSubject,
 } from '../api/nano'
 
 import NanoPromptOptimizer from './nano/NanoPromptOptimizer.vue'
@@ -519,8 +521,46 @@ async function submitMultiAngle(shots: { key: string; label: string; extraPrompt
       refDescriptions: [...refDescriptions.value],
     }
 
+    // 判斷是否為「場景角度模式」：所有 shot 無獨立 refImage，且 form 有場景參考圖
+    const isSceneAngleMode = shots.every(s => !s.refImage) && !!form.referenceImages?.length
+
+    // 場景角度模式：先用 Gemini 把場景圖轉成詳細文字描述
+    // 然後純文字生成（不傳參考圖）— 因為 Imagen reference 模式會鎖定構圖，無法真正換角度
+    let sceneTextPrompt = basePrompt
+    if (isSceneAngleMode) {
+      const sceneImg = form.referenceImages![0]
+      try {
+        const descRes = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: sceneImg.base64Data,
+            mimeType: sceneImg.mimeType,
+            aspects: ['background', 'lighting', 'color', 'composition', 'ground_surface', 'edge_objects', 'text_and_logos'],
+          }),
+        })
+        if (descRes.ok) {
+          const descData = await descRes.json()
+          const desc = descData.description || {}
+          // 組合成詳細場景描述，讓模型知道場景有什麼
+          const sceneParts = [
+            desc.background,
+            desc.ground_surface,
+            desc.edge_objects,
+            desc.text_and_logos && desc.text_and_logos !== '無' ? `visible signage/text: ${desc.text_and_logos}` : null,
+            desc.lighting,
+            desc.color,
+            basePrompt,
+          ].filter(Boolean)
+          if (sceneParts.length) {
+            sceneTextPrompt = `Photorealistic scene: ${sceneParts.join('. ')}`
+          }
+        }
+      } catch { /* 描述失敗用原本 basePrompt */ }
+    }
+
     for (const shot of shots) {
-      // Step 1: AI describe 參考圖（若有）
+      // Step 1: AI describe 每個 shot 的獨立參考圖（若有，非場景角度模式）
       let refDescription = ''
       if (shot.refImage) {
         try {
@@ -535,7 +575,6 @@ async function submitMultiAngle(shots: { key: string; label: string; extraPrompt
           })
           if (descRes.ok) {
             const descData = await descRes.json()
-            // 把各 aspect 的描述串成一段文字
             const parts = Object.values(descData.description || {}).filter(Boolean)
             if (parts.length) refDescription = parts.join(', ')
           }
@@ -543,12 +582,19 @@ async function submitMultiAngle(shots: { key: string; label: string; extraPrompt
       }
 
       // Step 2: 組合 prompt
-      const parts = [basePrompt, shot.extraPrompt, refDescription].filter(Boolean)
-      const prompt = parts.join('. ')
+      let prompt: string
+      if (isSceneAngleMode) {
+        // 場景角度：場景文字描述 + 角度指令（不傳參考圖，讓模型自由重建視角）
+        prompt = `${sceneTextPrompt}. ${shot.extraPrompt}`
+      } else {
+        const parts = [basePrompt, shot.extraPrompt, refDescription].filter(Boolean)
+        prompt = parts.join('. ')
+      }
 
       // Step 3: 生成
+      // 場景角度模式改用 text sourceMode（不傳參考圖，避免 Imagen 鎖定構圖）
       const payload: NanoGenerationPayload = {
-        sourceMode: shot.refImage ? 'reference' : form.sourceMode,
+        sourceMode: isSceneAngleMode ? 'text' : (shot.refImage ? 'reference' : form.sourceMode),
         prompt,
         negativePrompt: form.negativePrompt || undefined,
         aspectRatio: form.aspectRatio,
@@ -556,7 +602,7 @@ async function submitMultiAngle(shots: { key: string; label: string; extraPrompt
         numberOfImages: 1,
         personGeneration: form.personGeneration,
         image: !shot.refImage && form.sourceMode === 'edit' ? form.image : undefined,
-        referenceImages: shot.refImage ? [shot.refImage] : (form.sourceMode === 'reference' ? form.referenceImages : undefined),
+        referenceImages: isSceneAngleMode ? undefined : (shot.refImage ? [shot.refImage] : (form.sourceMode === 'reference' ? form.referenceImages : undefined)),
         uiState,
       }
 
@@ -566,6 +612,49 @@ async function submitMultiAngle(shots: { key: string; label: string; extraPrompt
         status: 'running' as const,
         sourceMode: payload.sourceMode,
         prompt,
+        createdAt: new Date().toISOString(),
+        outputs: [],
+      } as any)
+      startPolling()
+
+      const { job } = await createNanoJob(payload)
+      const idx = jobs.value.findIndex(j => j.id === placeholderId)
+      if (idx >= 0) jobs.value.splice(idx, 1, job)
+      else jobs.value.unshift(job)
+    }
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    submitting.value = false
+  }
+}
+
+// ── AI 特寫 submit ──
+async function submitAiCloseup(subjects: SceneSubject[], sceneImage: NanoInlineAsset) {
+  submitting.value = true
+  errorMessage.value = ''
+
+  try {
+    for (const subject of subjects) {
+      const prompt = `${subject.closeupPrompt}, consistent with scene reference image style and color palette`
+
+      const payload: NanoGenerationPayload = {
+        sourceMode: 'reference',
+        prompt,
+        negativePrompt: form.negativePrompt || undefined,
+        aspectRatio: form.aspectRatio,
+        imageSize: form.imageSize,
+        numberOfImages: 1,
+        personGeneration: form.personGeneration,
+        referenceImages: [sceneImage],
+      }
+
+      const placeholderId = `placeholder-aic-${Date.now()}-${subject.id}`
+      jobs.value.unshift({
+        id: placeholderId,
+        status: 'running' as const,
+        sourceMode: 'reference',
+        prompt: `[特寫] ${subject.name}`,
         createdAt: new Date().toISOString(),
         outputs: [],
       } as any)

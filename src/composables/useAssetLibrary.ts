@@ -23,11 +23,20 @@ const assets = ref<AssetItem[]>([])
 let loaded = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+/** Strip host prefix from URL so all stored URLs are server-relative paths */
+function normalizeUrl(url: string): string {
+  if (!url) return url
+  // Remove http://localhost:3001 or http://localhost:XXXX prefix
+  return url.replace(/^https?:\/\/localhost:\d+/, '')
+}
+
 async function loadFromBackend(): Promise<AssetItem[]> {
   try {
     const resp = await fetch(`${API_BASE_URL}/api/assets/index`)
     const data = await resp.json()
-    return data.ok ? (data.index || data.items || []) : []
+    const items: AssetItem[] = data.ok ? (data.index || data.items || []) : []
+    // Normalize any absolute localhost URLs to relative paths
+    return items.map(item => ({ ...item, url: normalizeUrl(item.url) }))
   } catch {
     // Fallback: try localStorage migration
     try {

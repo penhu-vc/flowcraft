@@ -316,6 +316,51 @@ export async function createNanoJob(payload: NanoGenerationRequest): Promise<Nan
   }
 }
 
+export interface SceneSubject {
+  id: string
+  name: string         // 中文名稱
+  nameEn: string       // English for prompts
+  description: string  // 中文描述
+  closeupPrompt: string // 特寫生成指令
+}
+
+export async function analyzeSceneSubjects(image: NanoInlineAsset): Promise<SceneSubject[]> {
+  const { client } = createClient()
+
+  const prompt = `Analyze this scene image and identify 5-8 distinct visual elements that would make compelling close-up photographs.
+
+For each element, provide:
+- id: sequential like "subject_1", "subject_2", etc.
+- name: Short Chinese label (2-8 characters)
+- nameEn: English noun phrase describing the element (3-8 words)
+- description: Brief Chinese description of the element (1-2 sentences)
+- closeupPrompt: English photography instruction specifically for generating an extreme close-up of this element (10-20 words). Include texture, material, and lighting details. Format: "Close-up macro shot of [element details], [texture/material], [lighting style], sharp focus, photorealistic"
+
+Focus on: main subjects, textures, architectural details, furniture, decorative elements, lighting fixtures, materials, patterns.
+
+Return ONLY a valid JSON array, no markdown fences, no commentary.`
+
+  const response = await client.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: image.mimeType, data: stripBase64Prefix(image.base64Data) } },
+        { text: prompt },
+      ],
+    }],
+    config: { responseModalities: ['TEXT'] },
+  })
+
+  const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]'
+  try {
+    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    return JSON.parse(cleaned) as SceneSubject[]
+  } catch {
+    return []
+  }
+}
+
 export async function describeImage(
   image: NanoInlineAsset,
   aspects: string[] = []

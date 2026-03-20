@@ -509,20 +509,35 @@ function deleteCharProfile() {
 function applyCharacter(charId: string) {
   const c = characters.value.find(ch => ch.id === charId)
   if (!c) return
-  // Fill aspect fields in active slot
+
   const slot = describeSlots[activeSlotIdx.value]
   if (slot) {
+    // 載入角色照片到當前 slot
+    if (c.photo) {
+      const mime = c.photo.match(/data:([^;]+)/)?.[1] || c.photoMime || 'image/jpeg'
+      const base64 = c.photo.includes(',') ? c.photo.split(',')[1] : c.photo
+      slot.preview = c.photo
+      slot.base64 = base64
+      slot.mime = mime
+      slot.result = null
+    }
+
+    // 強制覆蓋 aspect 欄位（不管是否已有內容）
     for (const asp of slot.aspects) {
-      if (c.aspects[asp.key] && !asp.userText.trim()) {
+      if (c.aspects[asp.key]) {
         asp.userText = c.aspects[asp.key]
         asp.checked = true
+      } else {
+        // 角色沒有此欄位資料就清空
+        asp.userText = ''
       }
     }
     rebuildRefDescription()
   }
-  // Emit to add photo as reference image (type=person)
+
+  // 同時通知父層加入人物參考圖
   if (c.photo) {
-    emit('apply-character', { photo: c.photo, mime: c.photoMime, name: c.name })
+    emit('apply-character', { photo: c.photo, mime: c.photoMime || 'image/jpeg', name: c.name })
   }
 }
 

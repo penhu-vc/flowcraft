@@ -5,7 +5,7 @@ import { join } from 'path'
 import { getDataDir, ensureDir } from '../dataDir'
 
 import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from '../services/veo'
-import { createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from '../services/nano'
+import { analyzeSceneSubjects, createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from '../services/nano'
 import { optimizeVeoPrompt } from '../veo-prompt-optimizer'
 import { optimizeNanoPrompt } from '../nano-prompt-optimizer'
 import { getVideosFromUrl } from '../utils/youtube-utils'
@@ -106,6 +106,20 @@ router.post('/api/nano/optimize-prompt', async (req, res) => {
         }
         const result = await optimizeNanoPrompt(prompt, mode || 'text')
         res.json({ ok: true, ...result })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+router.post('/api/nano/analyze-subjects', async (req, res) => {
+    try {
+        const { image } = req.body
+        if (!image?.base64Data) {
+            return res.status(400).json({ ok: false, error: 'image is required' })
+        }
+        const subjects = await analyzeSceneSubjects(image)
+        res.json({ ok: true, subjects })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
         res.status(500).json({ ok: false, error: message })

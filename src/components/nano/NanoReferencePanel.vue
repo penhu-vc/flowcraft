@@ -91,6 +91,9 @@
       <button class="btn btn-secondary btn-sm" @click="showVideoCapture = true">
         🎬 從影片擷取
       </button>
+      <button class="btn btn-secondary btn-sm" @click="triggerImageUpload">
+        🖼️ 從圖片上傳
+      </button>
       <button
         v-if="hasAnyRefDescription"
         class="btn btn-primary btn-sm ref-optimize-btn"
@@ -103,9 +106,17 @@
 
     <VideoFrameCapture
       :visible="showVideoCapture"
+      mode="video"
       @capture="onVideoCapture"
       @capture-portrait="onPortraitCapture"
       @close="showVideoCapture = false"
+    />
+
+    <VideoFrameCapture
+      :visible="showImageCapture"
+      mode="image"
+      @capture="onVideoCapture"
+      @close="showImageCapture = false"
     />
   </div>
 </template>
@@ -139,6 +150,72 @@ const emit = defineEmits<{
 const { addAsset, hasAsset } = useAssetLibrary()
 
 const showVideoCapture = ref(false)
+const showImageCapture = ref(false)
+const imageCaptureSrc = ref('')
+const imageCaptureMime = ref('image/jpeg')
+const imageUploadInput = ref<HTMLInputElement | null>(null)
+
+function triggerImageUpload() {
+  showImageCapture.value = true
+}
+
+function onImageFileChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  imageCaptureMime.value = file.type || 'image/jpeg'
+  const reader = new FileReader()
+  reader.onload = () => { imageCaptureSrc.value = String(reader.result) }
+  reader.readAsDataURL(file)
+  ;(event.target as HTMLInputElement).value = ''
+}
+
+async function onImageCaptureDrop(e: DragEvent) {
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    const img = Array.from(files).find(f => f.type.startsWith('image/'))
+    if (img) {
+      imageCaptureMime.value = img.type
+      const reader = new FileReader()
+      reader.onload = () => { imageCaptureSrc.value = String(reader.result) }
+      reader.readAsDataURL(img)
+      return
+    }
+  }
+  const raw = e.dataTransfer?.getData('application/x-flowcraft-asset')
+  if (raw) {
+    try {
+      const asset = JSON.parse(raw) as { url?: string; mimeType?: string }
+      if (asset.url && (asset.mimeType?.startsWith('image/') ?? true)) {
+        const resp = await fetch(asset.url)
+        const blob = await resp.blob()
+        imageCaptureMime.value = blob.type || 'image/jpeg'
+        const reader = new FileReader()
+        reader.onload = () => { imageCaptureSrc.value = String(reader.result) }
+        reader.readAsDataURL(blob)
+      }
+    } catch {}
+  }
+}
+
+async function confirmImageCapture() {
+  if (!imageCaptureSrc.value) return
+  const base64 = imageCaptureSrc.value.split(',')[1]
+  const images = [...props.referenceImages] as NanoRefAsset[]
+  images.push({ base64Data: base64, mimeType: imageCaptureMime.value, previewUrl: imageCaptureSrc.value, referenceType: 'subject_default' })
+  emit('update:referenceImages', images)
+  imageCaptureSrc.value = ''
+  showImageCapture.value = false
+}
+
+async function onImageUpload(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const asset = await fileToAsset(file)
+  const images = [...props.referenceImages] as NanoRefAsset[]
+  images.push({ ...asset, referenceType: 'subject_default' })
+  emit('update:referenceImages', images)
+  ;(event.target as HTMLInputElement).value = ''
+}
 
 function onVideoCapture(payload: { base64: string; mimeType: string }) {
   if (props.referenceImages.length >= 14) return
@@ -557,4 +634,55 @@ async function onRefDropAsset(e: DragEvent, _slotIndex: number) {
 .media-card-wrap:hover .collect-done {
   opacity: 1;
 }
+/* ── 圖片擷取 panel ── */
+.img-capture-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.img-capture-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.03);
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.img-capture-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 30px 16px;
+  margin: 12px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.img-capture-zone:hover {
+  border-color: var(--accent);
+  background: rgba(139,92,246,0.05);
+}
+.img-capture-icon { font-size: 28px; }
+.img-capture-text { font-size: 14px; color: var(--text-primary); }
+.img-capture-hint { font-size: 11px; color: var(--text-secondary); }
+.img-capture-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+.img-capture-img {
+  max-height: 260px;
+  max-width: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.img-capture-actions { display: flex; gap: 8px; }
 </style>

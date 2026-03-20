@@ -96,6 +96,23 @@ export async function replaceNanoOutput(jobId: string, outputIndex: number, base
   return parse<{ ok: true }>(res)
 }
 
+export interface SceneSubject {
+  id: string
+  name: string
+  nameEn: string
+  description: string
+  closeupPrompt: string
+}
+
+export async function analyzeNanoSubjects(image: NanoInlineAsset) {
+  const res = await fetch(API_ENDPOINTS.nanoAnalyzeSubjects, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image }),
+  })
+  return parse<{ ok: true; subjects: SceneSubject[] }>(res)
+}
+
 export async function optimizeNanoPrompt(prompt: string, mode: string = 'text') {
   const res = await fetch(API_ENDPOINTS.nanoOptimizePrompt, {
     method: 'POST',

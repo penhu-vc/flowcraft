@@ -42,6 +42,7 @@ export const API_ENDPOINTS = {
   nanoGenerate: `${API_BASE_URL}/api/nano/generate`,
   nanoJobs: `${API_BASE_URL}/api/nano/jobs`,
   nanoOptimizePrompt: `${API_BASE_URL}/api/nano/optimize-prompt`,
+  nanoAnalyzeSubjects: `${API_BASE_URL}/api/nano/analyze-subjects`,
 
   // 工作流同步
   workflowsSync: `${API_BASE_URL}/api/workflows/sync`,
