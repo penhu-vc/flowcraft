@@ -18,10 +18,9 @@ const getAssetsDir = () => ensureDir('generated', 'assets')
 const getAssetsIndexFile = () => join(getDataDir(), 'assets-index.json')
 
 // ── Serve static generated files ──────────────────────────────────
-// 每次請求時動態解析路徑
-router.use('/generated', (req, res, next) => {
-    express.static(getGeneratedFilesDir())(req, res, next)
-})
+// 啟動時初始化路徑，切換 NAS 後需要重啟 server 才能從新位置提供靜態檔案
+const GENERATED_FILES_DIR = ensureDir('generated')
+router.use('/generated', express.static(GENERATED_FILES_DIR))
 
 // ── Assets index helpers ──────────────────────────────────────────
 interface AssetIndexEntry {
