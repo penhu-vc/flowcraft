@@ -3,17 +3,16 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from '
 import { join } from 'path'
 import { startAuthFlow } from '../auth/saveSession'
 import { handleTelegramWebhook } from '../telegram-webhook'
-import { LOCAL_DATA_DIR, getDataDir, getStorageConfig, setStorageConfig } from '../dataDir'
+import { LOCAL_DATA_DIR, getDataDir, getStorageConfig, setStorageConfig, syncCredentials } from '../dataDir'
 
-// 設定檔永遠放本地
-const SETTINGS_DIR = LOCAL_DATA_DIR
-const GCP_CREDENTIALS_FILE = join(SETTINGS_DIR, 'gcp-credentials.json')
-const GEMINI_SETTINGS_FILE = join(SETTINGS_DIR, 'gemini-settings.json')
-const API_KEYS_FILE = join(SETTINGS_DIR, 'api-keys.json')
+// 憑證與設定檔路徑跟著 getDataDir()，支援 NAS 同步
+const getGcpCredentialsFile = () => join(getDataDir(), 'gcp-credentials.json')
+const getGeminiSettingsFile = () => join(getDataDir(), 'gemini-settings.json')
+const getApiKeysFile = () => join(getDataDir(), 'api-keys.json')
 
-// Ensure data dir exists
-if (!existsSync(SETTINGS_DIR)) {
-    mkdirSync(SETTINGS_DIR, { recursive: true })
+// Ensure local data dir exists (always)
+if (!existsSync(LOCAL_DATA_DIR)) {
+    mkdirSync(LOCAL_DATA_DIR, { recursive: true })
 }
 
 const router = Router()
@@ -23,16 +22,16 @@ router.get('/settings/gemini/status', (_req, res) => {
     try {
         // 讀取 Gemini 設定
         let settings = { mode: 'apiKey', apiKey: '' }
-        if (existsSync(GEMINI_SETTINGS_FILE)) {
-            settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+        if (existsSync(getGeminiSettingsFile())) {
+            settings = JSON.parse(readFileSync(getGeminiSettingsFile(), 'utf-8'))
         }
 
         const hasApiKey = !!settings.apiKey
-        const hasGcp = existsSync(GCP_CREDENTIALS_FILE)
+        const hasGcp = existsSync(getGcpCredentialsFile())
 
         let gcpInfo = null
         if (hasGcp) {
-            const creds = JSON.parse(readFileSync(GCP_CREDENTIALS_FILE, 'utf-8'))
+            const creds = JSON.parse(readFileSync(getGcpCredentialsFile(), 'utf-8'))
             gcpInfo = {
                 projectId: creds.project_id,
                 clientEmail: creds.client_email
@@ -64,7 +63,7 @@ router.post('/settings/gemini/api-key', (req, res) => {
 
         // 儲存設定
         const settings = { mode: 'apiKey', apiKey }
-        writeFileSync(GEMINI_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8')
+        writeFileSync(getGeminiSettingsFile(), JSON.stringify(settings, null, 2), 'utf-8')
 
         // 設定環境變數
         process.env.GEMINI_API_KEY = apiKey
@@ -79,11 +78,11 @@ router.post('/settings/gemini/api-key', (req, res) => {
 // ── GCP status ────────────────────────────────────────────────────
 router.get('/settings/gcp/status', (_req, res) => {
     try {
-        if (!existsSync(GCP_CREDENTIALS_FILE)) {
+        if (!existsSync(getGcpCredentialsFile())) {
             return res.json({ ok: true, connected: false, message: '尚未設定 GCP 憑證' })
         }
 
-        const data = readFileSync(GCP_CREDENTIALS_FILE, 'utf-8')
+        const data = readFileSync(getGcpCredentialsFile(), 'utf-8')
         const creds = JSON.parse(data)
 
         res.json({
@@ -108,19 +107,19 @@ router.post('/settings/gcp/credentials', (req, res) => {
             return res.status(400).json({ ok: false, error: '無效的 GCP 憑證' })
         }
 
-        writeFileSync(GCP_CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), 'utf-8')
+        writeFileSync(getGcpCredentialsFile(), JSON.stringify(credentials, null, 2), 'utf-8')
 
         // 更新 Gemini 設定為 GCP 模式
         const settings = { mode: 'gcp', apiKey: '' }
-        if (existsSync(GEMINI_SETTINGS_FILE)) {
-            const existing = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+        if (existsSync(getGeminiSettingsFile())) {
+            const existing = JSON.parse(readFileSync(getGeminiSettingsFile(), 'utf-8'))
             settings.apiKey = existing.apiKey || ''
         }
         settings.mode = 'gcp'
-        writeFileSync(GEMINI_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8')
+        writeFileSync(getGeminiSettingsFile(), JSON.stringify(settings, null, 2), 'utf-8')
 
         // 設定環境變數讓 Gemini executor 使用
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = getGcpCredentialsFile()
 
         res.json({ ok: true, message: 'GCP 憑證已儲存' })
     } catch (err: unknown) {
@@ -131,8 +130,8 @@ router.post('/settings/gcp/credentials', (req, res) => {
 
 router.delete('/settings/gcp/credentials', (_req, res) => {
     try {
-        if (existsSync(GCP_CREDENTIALS_FILE)) {
-            unlinkSync(GCP_CREDENTIALS_FILE)
+        if (existsSync(getGcpCredentialsFile())) {
+            unlinkSync(getGcpCredentialsFile())
         }
         delete process.env.GOOGLE_APPLICATION_CREDENTIALS
         res.json({ ok: true, message: 'GCP 憑證已移除' })
@@ -145,11 +144,11 @@ router.delete('/settings/gcp/credentials', (_req, res) => {
 // ── API Keys ─────────────────────────────────────────────────────
 router.get('/settings/api-keys', (_req, res) => {
     try {
-        if (!existsSync(API_KEYS_FILE)) {
+        if (!existsSync(getApiKeysFile())) {
             return res.json({ ok: true })
         }
 
-        const data = readFileSync(API_KEYS_FILE, 'utf-8')
+        const data = readFileSync(getApiKeysFile(), 'utf-8')
         const keys = JSON.parse(data)
 
         // 回傳時遮蔽部分內容
@@ -170,8 +169,8 @@ router.post('/settings/api-keys', (req, res) => {
 
         // 讀取現有的設定（如果有的話）
         let existing: any = {}
-        if (existsSync(API_KEYS_FILE)) {
-            existing = JSON.parse(readFileSync(API_KEYS_FILE, 'utf-8'))
+        if (existsSync(getApiKeysFile())) {
+            existing = JSON.parse(readFileSync(getApiKeysFile(), 'utf-8'))
         }
 
         // 如果傳入的是遮蔽值，保留原值
@@ -182,7 +181,7 @@ router.post('/settings/api-keys', (req, res) => {
             telegramChatId: telegramChatId || ''
         }
 
-        writeFileSync(API_KEYS_FILE, JSON.stringify(newKeys, null, 2), 'utf-8')
+        writeFileSync(getApiKeysFile(), JSON.stringify(newKeys, null, 2), 'utf-8')
 
         // 更新環境變數
         if (newKeys.telegramBotToken) {
@@ -200,14 +199,14 @@ router.post('/settings/api-keys', (req, res) => {
 })
 
 // ── Saved Prompts ───────────────────────────────────────────────
-const SAVED_PROMPTS_FILE = join(SETTINGS_DIR, 'saved-prompts.json')
+const getSavedPromptsFile = () => join(getDataDir(), 'saved-prompts.json')
 
 router.get('/settings/saved-prompts', (_req, res) => {
     try {
-        if (!existsSync(SAVED_PROMPTS_FILE)) {
+        if (!existsSync(getSavedPromptsFile())) {
             return res.json({ ok: true, prompts: [] })
         }
-        const raw = JSON.parse(readFileSync(SAVED_PROMPTS_FILE, 'utf-8'))
+        const raw = JSON.parse(readFileSync(getSavedPromptsFile(), 'utf-8'))
         const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.prompts) ? raw.prompts : [])
         res.json({ ok: true, prompts: data })
     } catch (err: unknown) {
@@ -222,7 +221,7 @@ router.put('/settings/saved-prompts', (req, res) => {
         if (!Array.isArray(prompts)) {
             return res.status(400).json({ ok: false, error: 'prompts array required' })
         }
-        writeFileSync(SAVED_PROMPTS_FILE, JSON.stringify(prompts, null, 2), 'utf-8')
+        writeFileSync(getSavedPromptsFile(), JSON.stringify(prompts, null, 2), 'utf-8')
         res.json({ ok: true })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
@@ -231,14 +230,14 @@ router.put('/settings/saved-prompts', (req, res) => {
 })
 
 // ── Saved Characters ────────────────────────────────────────────
-const SAVED_CHARACTERS_FILE = join(SETTINGS_DIR, 'saved-characters.json')
+const getSavedCharactersFile = () => join(getDataDir(), 'saved-characters.json')
 
 router.get('/settings/saved-characters', (_req, res) => {
     try {
-        if (!existsSync(SAVED_CHARACTERS_FILE)) {
+        if (!existsSync(getSavedCharactersFile())) {
             return res.json({ ok: true, characters: [] })
         }
-        const raw = JSON.parse(readFileSync(SAVED_CHARACTERS_FILE, 'utf-8'))
+        const raw = JSON.parse(readFileSync(getSavedCharactersFile(), 'utf-8'))
         const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.characters) ? raw.characters : [])
         res.json({ ok: true, characters: data })
     } catch (err: unknown) {
@@ -253,7 +252,7 @@ router.put('/settings/saved-characters', (req, res) => {
         if (!Array.isArray(characters)) {
             return res.status(400).json({ ok: false, error: 'characters array required' })
         }
-        writeFileSync(SAVED_CHARACTERS_FILE, JSON.stringify(characters, null, 2), 'utf-8')
+        writeFileSync(getSavedCharactersFile(), JSON.stringify(characters, null, 2), 'utf-8')
         res.json({ ok: true })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
@@ -296,9 +295,9 @@ router.post('/telegram/webhook', async (req, res) => {
 // ── Load settings at startup ─────────────────────────────────────
 export function loadSettings() {
     // 載入 Gemini 設定
-    if (existsSync(GEMINI_SETTINGS_FILE)) {
+    if (existsSync(getGeminiSettingsFile())) {
         try {
-            const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf-8'))
+            const settings = JSON.parse(readFileSync(getGeminiSettingsFile(), 'utf-8'))
             if (settings.apiKey) {
                 process.env.GEMINI_API_KEY = settings.apiKey
                 console.log('✅ Gemini API Key loaded')
@@ -309,15 +308,15 @@ export function loadSettings() {
     }
 
     // 載入 GCP 憑證
-    if (existsSync(GCP_CREDENTIALS_FILE)) {
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = GCP_CREDENTIALS_FILE
+    if (existsSync(getGcpCredentialsFile())) {
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = getGcpCredentialsFile()
         console.log('✅ GCP credentials loaded')
     }
 
     // 載入 API Keys
-    if (existsSync(API_KEYS_FILE)) {
+    if (existsSync(getApiKeysFile())) {
         try {
-            const keys = JSON.parse(readFileSync(API_KEYS_FILE, 'utf-8'))
+            const keys = JSON.parse(readFileSync(getApiKeysFile(), 'utf-8'))
             if (keys.telegramBotToken) process.env.TELEGRAM_BOT_TOKEN = keys.telegramBotToken
             if (keys.telegramChatId) process.env.TELEGRAM_CHAT_ID = keys.telegramChatId
             console.log('✅ API keys loaded')
@@ -343,10 +342,18 @@ router.put('/settings/storage', (req, res) => {
         if (mode !== 'local' && mode !== 'nas') {
             return res.status(400).json({ ok: false, error: 'mode must be "local" or "nas"' })
         }
-        setStorageConfig({ mode, ...(nasPath ? { nasPath } : {}) })
+        // 先更新 nasPath（syncCredentials 需要）
+        setStorageConfig({ ...(nasPath ? { nasPath } : {}), mode })
+
+        // 自動同步憑證與設定檔到目標位置
+        const syncResult = syncCredentials(mode)
+        console.log(`[storage] sync result:`, syncResult)
+
+        // 重新載入設定（從新位置）
+        loadSettings()
+
         const config = getStorageConfig()
-        console.log(`[storage] switched to ${mode}, dataDir=${getDataDir()}`)
-        res.json({ ok: true, ...config })
+        res.json({ ok: true, ...config, sync: syncResult })
     } catch (e: unknown) {
         res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) })
     }

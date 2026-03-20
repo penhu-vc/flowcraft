@@ -3,7 +3,7 @@
  * 支援本地 data/ 與 NAS 兩種模式，可在設定頁切換
  */
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 
 // 本地預設目錄（永遠存在）
 export const LOCAL_DATA_DIR = join(__dirname, '../../data')
@@ -70,4 +70,79 @@ export function ensureDir(...parts: string[]): string {
   const fullPath = join(getDataDir(), ...parts)
   mkdirSync(fullPath, { recursive: true })
   return fullPath
+}
+
+// 需要同步的設定/憑證檔案清單
+const CREDENTIAL_FILES = [
+  'gemini-settings.json',
+  'gcp-credentials.json',
+  'api-keys.json',
+  'saved-prompts.json',
+  'saved-characters.json',
+  'workflows.json',
+  'assets-index.json',
+]
+
+/**
+ * 切換到 NAS 模式時，自動將本地設定檔複製到 NAS
+ * 切換回本地時，將 NAS 上的設定檔複製回本地
+ * 回傳 { copied: string[], skipped: string[], errors: string[] }
+ */
+export function syncCredentials(targetMode: 'local' | 'nas'): {
+  copied: string[]
+  skipped: string[]
+  errors: string[]
+} {
+  const nasPath = _config.nasPath
+  const result = { copied: [] as string[], skipped: [] as string[], errors: [] as string[] }
+
+  if (targetMode === 'nas') {
+    // 本地 → NAS
+    if (!existsSync(nasPath)) {
+      result.errors.push('NAS 路徑不存在，無法同步')
+      return result
+    }
+    mkdirSync(nasPath, { recursive: true })
+
+    for (const file of CREDENTIAL_FILES) {
+      const src = join(LOCAL_DATA_DIR, file)
+      const dst = join(nasPath, file)
+      try {
+        if (existsSync(src)) {
+          copyFileSync(src, dst)
+          result.copied.push(file)
+          console.log(`[storage] copied local → NAS: ${file}`)
+        } else {
+          result.skipped.push(file)
+        }
+      } catch (e: unknown) {
+        result.errors.push(`${file}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+  } else {
+    // NAS → 本地
+    if (!existsSync(nasPath)) {
+      result.errors.push('NAS 路徑不存在，無法同步')
+      return result
+    }
+    mkdirSync(LOCAL_DATA_DIR, { recursive: true })
+
+    for (const file of CREDENTIAL_FILES) {
+      const src = join(nasPath, file)
+      const dst = join(LOCAL_DATA_DIR, file)
+      try {
+        if (existsSync(src)) {
+          copyFileSync(src, dst)
+          result.copied.push(file)
+          console.log(`[storage] copied NAS → local: ${file}`)
+        } else {
+          result.skipped.push(file)
+        }
+      } catch (e: unknown) {
+        result.errors.push(`${file}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+  }
+
+  return result
 }

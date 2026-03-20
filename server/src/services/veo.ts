@@ -2,7 +2,7 @@ import { GenerateVideosOperation, GoogleGenAI, VideoCompressionQuality, VideoGen
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { getDataDir, LOCAL_DATA_DIR, ensureDir } from '../dataDir'
+import { getDataDir, ensureDir } from '../dataDir'
 
 type VeoMode = 'apiKey' | 'gcp'
 type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
@@ -81,9 +81,9 @@ function cloneRequestSnapshot(payload: VeoGenerationRequest): VeoGenerationReque
 // 路徑動態取得，支援本地/NAS 切換
 const getGeneratedDir = () => ensureDir('generated', 'veo')
 const getJobsFile = () => join(getDataDir(), 'veo-jobs.json')
-// 設定檔永遠放本地（不隨 NAS 移動）
-const GEMINI_SETTINGS_FILE = join(LOCAL_DATA_DIR, 'gemini-settings.json')
-const GCP_CREDENTIALS_FILE = join(LOCAL_DATA_DIR, 'gcp-credentials.json')
+// 設定檔跟著 getDataDir()（NAS 模式時從 NAS 讀）
+const getGeminiSettingsFile = () => join(getDataDir(), 'gemini-settings.json')
+const getGcpCredentialsFile = () => join(getDataDir(), 'gcp-credentials.json')
 
 const jobs = new Map<string, VeoJobRecord>()
 loadJobs()
@@ -117,8 +117,8 @@ function persistJobs() {
 }
 
 function getGeminiSettings(): { mode: VeoMode; apiKey?: string } {
-  if (existsSync(GEMINI_SETTINGS_FILE)) {
-    const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf8'))
+  if (existsSync(getGeminiSettingsFile())) {
+    const settings = JSON.parse(readFileSync(getGeminiSettingsFile(), 'utf8'))
     return {
       mode: settings.mode === 'gcp' ? 'gcp' : 'apiKey',
       apiKey: settings.apiKey || process.env.GEMINI_API_KEY,
@@ -129,7 +129,7 @@ function getGeminiSettings(): { mode: VeoMode; apiKey?: string } {
     return { mode: 'apiKey', apiKey: process.env.GEMINI_API_KEY }
   }
 
-  if (existsSync(GCP_CREDENTIALS_FILE)) {
+  if (existsSync(getGcpCredentialsFile())) {
     return { mode: 'gcp' }
   }
 
@@ -139,7 +139,7 @@ function getGeminiSettings(): { mode: VeoMode; apiKey?: string } {
 function createClient() {
   // Veo video generation requires Vertex AI (generateVideos, generateAudio not supported in Gemini API)
   // Always use GCP credentials regardless of gemini-settings.json mode
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || getGcpCredentialsFile()
   if (!existsSync(credentialsPath)) {
     // Fallback to API Key mode for non-video operations (e.g. prompt optimization)
     const settings = getGeminiSettings()
@@ -344,7 +344,7 @@ async function hydrateOutputs(client: GoogleGenAI, job: VeoJobRecord, operation:
 export function getVeoStatus() {
   try {
     // Veo 優先使用 GCP 憑證（Vertex AI），其次 API Key
-    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || getGcpCredentialsFile()
     if (existsSync(credentialsPath)) {
       return {
         ok: true,

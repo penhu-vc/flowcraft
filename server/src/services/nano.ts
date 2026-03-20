@@ -11,7 +11,7 @@ import { GoogleGenAI } from '@google/genai'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { getDataDir, LOCAL_DATA_DIR, ensureDir } from '../dataDir'
+import { getDataDir, ensureDir } from '../dataDir'
 
 type NanoMode = 'apiKey' | 'gcp'
 type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
@@ -80,9 +80,9 @@ export interface NanoChatSession {
 // 路徑動態取得，支援本地/NAS 切換
 const getGeneratedDir = () => ensureDir('generated', 'nano')
 const getJobsFile = () => join(getDataDir(), 'nano-jobs.json')
-// 設定檔永遠放本地
-const GEMINI_SETTINGS_FILE = join(LOCAL_DATA_DIR, 'gemini-settings.json')
-const GCP_CREDENTIALS_FILE = join(LOCAL_DATA_DIR, 'gcp-credentials.json')
+// 設定檔跟著 getDataDir()（NAS 模式時從 NAS 讀）
+const getGeminiSettingsFile = () => join(getDataDir(), 'gemini-settings.json')
+const getGcpCredentialsFile = () => join(getDataDir(), 'gcp-credentials.json')
 
 const jobs = new Map<string, NanoJobRecord>()
 loadJobs()
@@ -113,8 +113,8 @@ function persistJobs() {
 }
 
 function getGeminiSettings(): { mode: NanoMode; apiKey?: string } {
-  if (existsSync(GEMINI_SETTINGS_FILE)) {
-    const settings = JSON.parse(readFileSync(GEMINI_SETTINGS_FILE, 'utf8'))
+  if (existsSync(getGeminiSettingsFile())) {
+    const settings = JSON.parse(readFileSync(getGeminiSettingsFile(), 'utf8'))
     return {
       mode: settings.mode === 'gcp' ? 'gcp' : 'apiKey',
       apiKey: settings.apiKey || process.env.GEMINI_API_KEY,
@@ -123,7 +123,7 @@ function getGeminiSettings(): { mode: NanoMode; apiKey?: string } {
   if (process.env.GEMINI_API_KEY) {
     return { mode: 'apiKey', apiKey: process.env.GEMINI_API_KEY }
   }
-  if (existsSync(GCP_CREDENTIALS_FILE)) {
+  if (existsSync(getGcpCredentialsFile())) {
     return { mode: 'gcp' }
   }
   throw new Error('Nano 未設定。請先到設定頁儲存 Gemini API Key 或 GCP 憑證。')
@@ -136,7 +136,7 @@ function createClient() {
     return { authMode: settings.mode, client: new GoogleGenAI({ apiKey: settings.apiKey }) }
   }
 
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || GCP_CREDENTIALS_FILE
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || getGcpCredentialsFile()
   if (!existsSync(credentialsPath)) {
     throw new Error('GCP 憑證不存在，無法使用 Vertex AI。')
   }
