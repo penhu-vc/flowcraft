@@ -9,8 +9,11 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 // dataDir.ts 在 server/src/，所以 ../data = server/data
 export const LOCAL_DATA_DIR = join(__dirname, '../data')
 
-// NAS UNC 路徑（Windows SMB）
-const DEFAULT_NAS_PATH = '\\\\192.168.1.108\\penhu_video\\flowcraft\\data'
+// NAS 路徑（自動偵測 Mac / Windows）
+const IS_MAC = process.platform === 'darwin'
+const DEFAULT_NAS_PATH = IS_MAC
+  ? '/Users/yaja/mnt/nas/flowcraft/data'
+  : '\\\\192.168.1.108\\penhu_video\\flowcraft\\data'
 
 // config 存在本地（不放 NAS，避免雞生蛋問題）
 const CONFIG_FILE = join(LOCAL_DATA_DIR, 'storage-config.json')
