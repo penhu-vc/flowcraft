@@ -6,7 +6,8 @@ import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 
 // 本地預設目錄（永遠存在）
-export const LOCAL_DATA_DIR = join(__dirname, '../../data')
+// dataDir.ts 在 server/src/，所以 ../data = server/data
+export const LOCAL_DATA_DIR = join(__dirname, '../data')
 
 // NAS UNC 路徑（Windows SMB）
 const DEFAULT_NAS_PATH = '\\\\192.168.1.108\\penhu_video\\flowcraft\\data'
