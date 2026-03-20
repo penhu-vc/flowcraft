@@ -357,6 +357,13 @@ function onLbMouseDown(e: MouseEvent) {
   transform: scale(1.02);
 }
 
+.video-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+}
+
 /* ── Collect Button ── */
 .media-card-wrap {
   position: relative;

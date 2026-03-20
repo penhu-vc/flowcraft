@@ -163,7 +163,7 @@ async function processFiles(files: File[]) {
       })
       const data = await resp.json()
       if (data.ok) {
-        addAsset({ type: isVideo ? 'video' : 'image', url: `${API_BASE}${data.url}`, mimeType: file.type, label: file.name, filename: file.name })
+        addAsset({ type: isVideo ? 'video' : 'image', url: data.url, mimeType: file.type, label: file.name, filename: file.name })
       }
     } catch {
       // fallback: use blob URL for images

@@ -87,14 +87,26 @@
         />
       </div>
     </div>
-    <button
-      v-if="hasAnyRefDescription"
-      class="btn btn-primary btn-sm ref-optimize-btn"
-      :disabled="optimizerDisabled"
-      @click="$emit('run-ref-optimizer')"
-    >
-      ✨ 一鍵優化指令
-    </button>
+    <div class="ref-action-row">
+      <button class="btn btn-secondary btn-sm" @click="showVideoCapture = true">
+        🎬 從影片擷取
+      </button>
+      <button
+        v-if="hasAnyRefDescription"
+        class="btn btn-primary btn-sm ref-optimize-btn"
+        :disabled="optimizerDisabled"
+        @click="$emit('run-ref-optimizer')"
+      >
+        ✨ 一鍵優化指令
+      </button>
+    </div>
+
+    <VideoFrameCapture
+      :visible="showVideoCapture"
+      @capture="onVideoCapture"
+      @capture-portrait="onPortraitCapture"
+      @close="showVideoCapture = false"
+    />
   </div>
 </template>
 
@@ -102,6 +114,7 @@
 import { computed, ref, watch } from 'vue'
 import { useAssetLibrary } from '../../composables/useAssetLibrary'
 import type { NanoInlineAsset } from '../../api/nano'
+import VideoFrameCapture from './VideoFrameCapture.vue'
 
 export type NanoRefType =
   | 'subject_person' | 'subject_animal' | 'subject_product' | 'subject_default'
@@ -124,6 +137,36 @@ const emit = defineEmits<{
 }>()
 
 const { addAsset, hasAsset } = useAssetLibrary()
+
+const showVideoCapture = ref(false)
+
+function onVideoCapture(payload: { base64: string; mimeType: string }) {
+  if (props.referenceImages.length >= 14) return
+  const images = [...props.referenceImages] as NanoRefAsset[]
+  images.push({
+    base64Data: payload.base64,
+    mimeType: payload.mimeType,
+    previewUrl: payload.base64,
+    referenceType: 'subject_default',
+  })
+  emit('update:referenceImages', images)
+}
+
+function onPortraitCapture(payload: { base64: string; mimeType: string }) {
+  const remaining = 14 - props.referenceImages.length
+  if (remaining <= 0) return
+  const types: NanoRefType[] = ['subject_person', 'style', 'control_face_mesh']
+  const images = [...props.referenceImages] as NanoRefAsset[]
+  for (const refType of types.slice(0, remaining)) {
+    images.push({
+      base64Data: payload.base64,
+      mimeType: payload.mimeType,
+      previewUrl: payload.base64,
+      referenceType: refType,
+    })
+  }
+  emit('update:referenceImages', images)
+}
 
 function collectAssetDirect(url: string) {
   addAsset({ type: 'image', url, mimeType: 'image/jpeg', label: 'AI Studio' })
@@ -461,8 +504,13 @@ async function onRefDropAsset(e: DragEvent, _slotIndex: number) {
   opacity: 0.3;
   cursor: not-allowed;
 }
-.ref-optimize-btn {
+.ref-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 10px;
+}
+.ref-optimize-btn {
   align-self: flex-start;
 }
 

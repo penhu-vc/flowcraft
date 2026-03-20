@@ -19,6 +19,7 @@
 
       <div v-show="!multiAngle" class="form-group">
         <label class="form-label">Prompt</label>
+        <NanoSavedPrompts @apply="onApplySavedPrompt" />
         <textarea
           v-model="form.prompt"
           class="form-textarea veo-textarea"
@@ -75,15 +76,21 @@
       </div>
 
       <!-- Edit mode: upload image + mask painting -->
-      <div v-if="form.sourceMode === 'edit' && !multiAngle" class="asset-block" @dragover.prevent @drop="onEditDropAsset">
-        <div class="asset-head">
+      <div v-if="form.sourceMode === 'edit' && !multiAngle" class="asset-block" @dragover.prevent @drop="onEditDropAsset" @paste="onEditPaste">
+        <div v-if="form.image" class="asset-head">
           <span>編輯圖片</span>
           <label class="btn btn-secondary btn-sm">
-            上傳圖片
+            更換圖片
             <input type="file" accept="image/*" hidden @change="onImageUpload" />
           </label>
         </div>
+        <label v-if="!form.image" class="outpaint-upload-slot" @dragover.prevent @drop="onEditDropAsset">
+          <span class="outpaint-upload-plus">+</span>
+          <span class="outpaint-upload-hint">上傳 / 貼上</span>
+          <input type="file" accept="image/*" hidden @change="onImageUpload" />
+        </label>
         <NanoMaskEditor
+          v-if="form.image"
           ref="maskEditorRef"
           :image-preview="imagePreview"
           :submitting="submitting"
@@ -293,6 +300,8 @@ import type { NanoInlineAsset, NanoSourceMode } from '../../api/nano'
 import NanoMaskEditor from './NanoMaskEditor.vue'
 import NanoOutpaintPreview from './NanoOutpaintPreview.vue'
 import NanoReferencePanel from './NanoReferencePanel.vue'
+import NanoSavedPrompts from './NanoSavedPrompts.vue'
+import type { SavedPrompt } from './NanoSavedPrompts.vue'
 
 export interface NanoFormState {
   sourceMode: NanoSourceMode
@@ -380,6 +389,11 @@ function onMultiAngleSubmit() {
       refImage: s.refImage,
     }))
   emit('submit-multi-angle', shots)
+}
+
+function onApplySavedPrompt(p: SavedPrompt) {
+  props.form.prompt = p.prompt
+  if (p.negativePrompt) props.form.negativePrompt = p.negativePrompt
 }
 
 const imagePreview = computed(() => props.form.image?.previewUrl || '')
@@ -571,6 +585,21 @@ async function onEditDropAsset(e: DragEvent) {
   emitAssetWithSize(asset)
 }
 
+async function onEditPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const file = item.getAsFile()
+      if (!file) continue
+      const asset = await fileToAsset(file)
+      emitAssetWithSize(asset)
+      return
+    }
+  }
+}
+
 // ── Expose mask editor ref for parent access ──
 defineExpose({
   maskEditorRef,
@@ -582,6 +611,34 @@ defineExpose({
 </script>
 
 <style scoped>
+/* ── Consistent form layout ── */
+.veo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px !important;
+}
+.veo-form > .form-group,
+.veo-form > .nano-params-row,
+.veo-form > .asset-block,
+.veo-form > .mode-strip {
+  margin: 0; /* reset any inherited margins, gap handles spacing */
+}
+
+.asset-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.asset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .mode-strip {
   display: flex;
   flex-wrap: wrap;
@@ -593,8 +650,9 @@ defineExpose({
   background: rgba(255,255,255,0.03);
   color: var(--text-secondary);
   border-radius: 999px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   cursor: pointer;
+  font-size: 13px;
   transition: var(--transition);
 }
 
@@ -733,8 +791,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 28px 20px;
+  gap: 10px;
+  padding: 16px;
   border-radius: 12px;
   background: rgba(124, 58, 237, 0.08);
   border: 1px solid rgba(124, 58, 237, 0.2);
@@ -878,4 +936,16 @@ defineExpose({
 }
 .ma-shot-pill.active { border-color: var(--accent); background: rgba(139,92,246,0.15); color: var(--accent); }
 .ma-warn { font-size: 12px; color: #f59e0b; }
+
+/* ── Submit row ── */
+.submit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.submit-row .hint {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  margin: 0;
+}
 </style>

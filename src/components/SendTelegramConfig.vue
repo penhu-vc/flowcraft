@@ -285,44 +285,52 @@ const parse = <T>(key: string, fallback: T): T => {
   try { return JSON.parse(props.config[key] ?? 'null') ?? fallback } catch { return fallback }
 }
 
-// Cross-workflow shared Bots & Chats via localStorage
-const STORAGE_KEY_BOTS = 'flowcraft_shared_bots'
-const STORAGE_KEY_CHATS = 'flowcraft_shared_chats'
+// Cross-workflow shared Bots & Chats via backend API
+import { API_ENDPOINTS } from '../api/config'
 
-function loadSharedBots(): Bot[] {
+const bots  = ref<Bot[]>(parse('bots', []))
+const chats = ref<Chat[]>(parse('chats', []))
+
+// Load from backend on mount
+;(async () => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY_BOTS)
-    if (stored) return JSON.parse(stored)
-  } catch {}
-  return parse('bots', [])
+    const [botsRes, chatsRes] = await Promise.all([
+      fetch(API_ENDPOINTS.settingsTelegramBots).then(r => r.json()),
+      fetch(API_ENDPOINTS.settingsTelegramChats).then(r => r.json()),
+    ])
+    if (botsRes.ok && botsRes.bots?.length) bots.value = botsRes.bots
+    else {
+      // Migration from localStorage
+      try {
+        const stored = localStorage.getItem('flowcraft_shared_bots')
+        if (stored) { bots.value = JSON.parse(stored); saveSharedBots(JSON.parse(stored)); localStorage.removeItem('flowcraft_shared_bots') }
+      } catch {}
+    }
+    if (chatsRes.ok && chatsRes.chats?.length) chats.value = chatsRes.chats
+    else {
+      try {
+        const stored = localStorage.getItem('flowcraft_shared_chats')
+        if (stored) { chats.value = JSON.parse(stored); saveSharedChats(JSON.parse(stored)); localStorage.removeItem('flowcraft_shared_chats') }
+      } catch {}
+    }
+  } catch { /* ignore, keep config defaults */ }
+})()
+
+function saveSharedBots(items: Bot[]) {
+  fetch(API_ENDPOINTS.settingsTelegramBots, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bots: items }),
+  }).catch(() => {})
 }
 
-function loadSharedChats(): Chat[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_CHATS)
-    if (stored) return JSON.parse(stored)
-  } catch {}
-  return parse('chats', [])
+function saveSharedChats(items: Chat[]) {
+  fetch(API_ENDPOINTS.settingsTelegramChats, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chats: items }),
+  }).catch(() => {})
 }
-
-function saveSharedBots(bots: Bot[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_BOTS, JSON.stringify(bots))
-  } catch (e) {
-    console.error('Failed to save bots to localStorage', e)
-  }
-}
-
-function saveSharedChats(chats: Chat[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats))
-  } catch (e) {
-    console.error('Failed to save chats to localStorage', e)
-  }
-}
-
-const bots  = ref<Bot[]>(loadSharedBots())
-const chats = ref<Chat[]>(loadSharedChats())
 const selectedBotIdx  = ref<number>(parse('selectedBotIdx', 0))
 const selectedChatIdx = ref<number>(parse('selectedChatIdx', 0))
 const localMessage    = ref<string>(props.config.message ?? '{{result}}')

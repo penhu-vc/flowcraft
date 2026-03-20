@@ -206,10 +206,10 @@
           <button class="char-modal-close" @click="closeCharModal">×</button>
         </div>
         <div class="char-modal-body">
-          <div class="char-modal-photo">
+          <div class="char-modal-photo" @dragover.prevent="charDragOver = true" @dragleave="charDragOver = false" @drop.prevent="onCharPhotoDrop">
             <img v-if="charForm.photo" :src="charForm.photo" class="char-modal-preview" />
-            <label v-else class="char-modal-upload">
-              <span>+ 上傳照片</span>
+            <label v-else class="char-modal-upload" :class="{ 'drag-over': charDragOver }">
+              <span>+ 上傳照片 / 拖入</span>
               <input type="file" accept="image/*" hidden @change="onCharPhotoUpload" />
             </label>
             <div class="char-modal-photo-actions">
@@ -248,9 +248,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, type Ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, type Ref } from 'vue'
 import { useAssetLibrary } from '../../composables/useAssetLibrary'
-import { API_BASE_URL } from '../../api/config'
+import { API_BASE_URL, API_ENDPOINTS } from '../../api/config'
 import { optimizeNanoPrompt, type NanoSourceMode } from '../../api/nano'
 
 const props = defineProps<{
@@ -317,8 +317,7 @@ interface CharacterProfile {
   aspects: Record<string, string> // key → description text
 }
 
-const CHAR_STORAGE_KEY = 'flowcraft-characters'
-const characters = ref<CharacterProfile[]>(loadCharacters())
+const characters = ref<CharacterProfile[]>([])
 const showCharModal = ref(false)
 const editingCharId = ref<string | null>(null)
 const charForm = reactive({
@@ -329,15 +328,46 @@ const charForm = reactive({
 })
 const charDescribing = ref(false)
 
-function loadCharacters(): CharacterProfile[] {
+async function loadCharacters() {
   try {
-    const raw = localStorage.getItem(CHAR_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+    // Try backend first
+    const res = await fetch(API_ENDPOINTS.settingsSavedCharacters)
+    const data = await res.json()
+    if (data.ok && data.characters?.length) {
+      characters.value = data.characters
+      return
+    }
+    // Migrate from localStorage if backend is empty
+    const raw = localStorage.getItem('flowcraft-characters')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed.length) {
+        characters.value = parsed
+        await persistCharacters()
+        localStorage.removeItem('flowcraft-characters')
+      }
+    }
+  } catch {
+    // Fallback to localStorage
+    try {
+      const raw = localStorage.getItem('flowcraft-characters')
+      if (raw) characters.value = JSON.parse(raw)
+    } catch { /* ignore */ }
+  }
+}
+
+async function persistCharacters() {
+  try {
+    await fetch(API_ENDPOINTS.settingsSavedCharacters, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characters: characters.value }),
+    })
+  } catch { /* ignore */ }
 }
 
 function saveCharacters() {
-  localStorage.setItem(CHAR_STORAGE_KEY, JSON.stringify(characters.value))
+  persistCharacters()
 }
 
 function openCharModal(charId?: string) {
@@ -364,6 +394,8 @@ function closeCharModal() {
   editingCharId.value = null
 }
 
+const charDragOver = ref(false)
+
 async function onCharPhotoUpload(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -375,6 +407,43 @@ async function onCharPhotoUpload(e: Event) {
   charForm.photo = base64
   charForm.photoMime = file.type || 'image/png'
   ;(e.target as HTMLInputElement).value = ''
+}
+
+async function onCharPhotoDrop(e: DragEvent) {
+  charDragOver.value = false
+  const dt = e.dataTransfer
+  if (!dt) return
+
+  // Handle files dropped from OS
+  if (dt.files?.length) {
+    const file = dt.files[0]
+    if (!file.type.startsWith('image/')) return
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.readAsDataURL(file)
+    })
+    charForm.photo = base64
+    charForm.photoMime = file.type || 'image/png'
+    return
+  }
+
+  // Handle asset panel drag
+  const raw = dt.getData('application/x-flowcraft-asset')
+  const url = raw ? JSON.parse(raw).url : (dt.getData('text/uri-list') || dt.getData('text/plain'))
+  if (!url) return
+  try {
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    if (!blob.type.startsWith('image/')) return
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.readAsDataURL(blob)
+    })
+    charForm.photo = base64
+    charForm.photoMime = blob.type || 'image/png'
+  } catch { /* ignore */ }
 }
 
 async function describeCharPhoto() {
@@ -500,9 +569,10 @@ function createEmptySlot(): RefSlot {
   }
 }
 
-// ── Image History (localStorage persistence) ──
-const HISTORY_STORAGE_KEY = 'nano-image-history'
+// ── Image History (backend persistence) ──
 const MAX_HISTORY = 50
+let cachedHistory: ImageHistory[] = []
+let historyLoaded = false
 
 interface ImageHistorySlot {
   fingerprint: string
@@ -529,15 +599,41 @@ function getFingerprint(base64: string): string {
 }
 
 function loadHistory(): ImageHistory[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+  return cachedHistory
 }
 
+;(async () => {
+  try {
+    const resp = await fetch(API_ENDPOINTS.settingsNanoHistory)
+    const data = await resp.json()
+    if (data.ok && data.history?.length) {
+      cachedHistory = data.history
+    } else {
+      // Migration from localStorage
+      try {
+        const raw = localStorage.getItem('nano-image-history')
+        if (raw) {
+          cachedHistory = JSON.parse(raw)
+          saveHistory(cachedHistory)
+          localStorage.removeItem('nano-image-history')
+        }
+      } catch {}
+    }
+  } catch {}
+  historyLoaded = true
+})()
+
+let historySaveTimer: ReturnType<typeof setTimeout> | null = null
 function saveHistory(histories: ImageHistory[]) {
-  const trimmed = histories.slice(0, MAX_HISTORY)
-  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed))
+  cachedHistory = histories.slice(0, MAX_HISTORY)
+  if (historySaveTimer) clearTimeout(historySaveTimer)
+  historySaveTimer = setTimeout(() => {
+    fetch(API_ENDPOINTS.settingsNanoHistory, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: cachedHistory }),
+    }).catch(() => {})
+  }, 500)
 }
 
 function findHistoryBySlots(slots: RefSlot[]): ImageHistory | null {
@@ -901,6 +997,10 @@ function openLightboxDirect(url: string) {
   lightboxUrl.value = url
 }
 
+onMounted(() => {
+  loadCharacters()
+})
+
 // ── Expose for parent restore ──
 defineExpose({
   optimizerMode,
@@ -917,11 +1017,17 @@ defineExpose({
     radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 40%),
     var(--bg-card);
 }
+.optimizer-card :deep(.card-header) {
+  padding: 12px 16px;
+}
+.optimizer-card :deep(.card-body) {
+  padding: 16px;
+}
 
 .optimizer-mode-strip {
   display: flex;
   gap: 6px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 .opt-mode-pill {
@@ -978,8 +1084,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
   background: rgba(255,255,255,0.03);
 }
@@ -1019,10 +1125,10 @@ defineExpose({
 }
 
 .optimizer-result {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .optimizer-sections {
@@ -1530,7 +1636,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 1100;
 }
 .char-modal {
   background: var(--c-surface, #1a1a2e);
@@ -1589,8 +1695,10 @@ defineExpose({
   font-size: 12px;
   color: var(--text-muted);
 }
-.char-modal-upload:hover {
+.char-modal-upload:hover,
+.char-modal-upload.drag-over {
   border-color: var(--accent-purple, #7c3aed);
+  background: rgba(124, 58, 237, 0.08);
 }
 .char-modal-photo-actions {
   display: flex;

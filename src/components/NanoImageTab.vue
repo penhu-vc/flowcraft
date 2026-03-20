@@ -5,6 +5,7 @@
       ref="optimizerRef"
       :source-modes="optimizerModes"
       @use-prompt="onUsePrompt"
+      @apply-character="onApplyCharacter"
     />
 
     <!-- Generation Form -->
@@ -202,6 +203,27 @@ function onUsePrompt(prompt: string, negativePrompt: string, mode: NanoSourceMod
     form.negativePrompt = negativePrompt
   }
   form.sourceMode = mode
+}
+
+// ── Apply character photo to reference images ──
+function onApplyCharacter(payload: { photo: string; mime: string; name: string }) {
+  // Check if already in reference images (by base64 prefix)
+  const exists = (form.referenceImages as NanoRefAsset[]).some(
+    r => r.base64Data === payload.photo
+  )
+  if (exists || form.referenceImages.length >= 14) return
+  const images = [...form.referenceImages] as NanoRefAsset[]
+  images.push({
+    base64Data: payload.photo,
+    mimeType: payload.mime || 'image/png',
+    previewUrl: payload.photo,
+    referenceType: 'subject_person',
+  })
+  form.referenceImages = images
+  // Switch to reference mode if not already
+  if (form.sourceMode !== 'reference') {
+    form.sourceMode = 'reference'
+  }
 }
 
 // ── Image upload handling ──
@@ -690,7 +712,7 @@ onBeforeUnmount(stopPolling)
 .nano-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 /* Lightbox */

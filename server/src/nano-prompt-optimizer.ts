@@ -261,16 +261,55 @@ export async function optimizeNanoPrompt(userPrompt: string, mode: string = 'tex
   }
 
   const parsed = parseJson(result)
-  if (parsed?.fullPrompt) {
-    return {
-      components: parsed.components || {},
-      fullPrompt: parsed.fullPrompt,
-      negativeHints: parsed.negativeHints || '',
-      sections: sectionKeys,
-      sectionLabels,
+
+  // Helper: build a clean prompt string from components object
+  const buildPromptFromComponents = (comps: Record<string, string>): string => {
+    // Concatenate non-empty component values in a natural order
+    const order = ['subject', 'context', 'style', 'composition', 'lighting', 'color', 'details', 'mood']
+    const parts: string[] = []
+    for (const key of order) {
+      if (comps[key]?.trim()) parts.push(comps[key].trim())
+    }
+    // Also include any extra keys not in the standard order
+    for (const [key, val] of Object.entries(comps)) {
+      if (!order.includes(key) && val?.trim()) parts.push(val.trim())
+    }
+    return parts.join(' ')
+  }
+
+  if (parsed) {
+    const components = parsed.components || {}
+    // Use fullPrompt if present, otherwise synthesize from components
+    let fullPrompt = parsed.fullPrompt || ''
+    if (!fullPrompt && Object.keys(components).length > 0) {
+      fullPrompt = buildPromptFromComponents(components)
+    }
+    // If still no fullPrompt and parsed itself looks like components (no wrapper)
+    if (!fullPrompt && !parsed.components && typeof parsed === 'object') {
+      const directComponents: Record<string, string> = {}
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string' && k !== 'negativeHints' && k !== 'fullPrompt') {
+          directComponents[k] = v
+        }
+      }
+      if (Object.keys(directComponents).length > 0) {
+        fullPrompt = buildPromptFromComponents(directComponents)
+        Object.assign(components, directComponents)
+      }
+    }
+
+    if (fullPrompt) {
+      return {
+        components,
+        fullPrompt,
+        negativeHints: parsed.negativeHints || '',
+        sections: sectionKeys,
+        sectionLabels,
+      }
     }
   }
 
+  // Final fallback: if result is not JSON at all, use it as-is (plain text prompt)
   return {
     components: {
       subject: '',

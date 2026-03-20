@@ -21,6 +21,8 @@ export const API_ENDPOINTS = {
   settingsGeminiApiKey: `${API_BASE_URL}/api/settings/gemini/api-key`,
   settingsGcpCredentials: `${API_BASE_URL}/api/settings/gcp/credentials`,
   settingsApiKeys: `${API_BASE_URL}/api/settings/api-keys`,
+  settingsSavedPrompts: `${API_BASE_URL}/api/settings/saved-prompts`,
+  settingsSavedCharacters: `${API_BASE_URL}/api/settings/saved-characters`,
 
   // YouTube 相關
   youtubeRecentVideos: `${API_BASE_URL}/api/youtube/recent-videos`,
@@ -43,6 +45,16 @@ export const API_ENDPOINTS = {
 
   // 工作流同步
   workflowsSync: `${API_BASE_URL}/api/workflows/sync`,
+
+  // 資料集合
+  settingsCollections: `${API_BASE_URL}/api/settings/collections`,
+
+  // Telegram 共用設定
+  settingsTelegramBots: `${API_BASE_URL}/api/settings/telegram-bots`,
+  settingsTelegramChats: `${API_BASE_URL}/api/settings/telegram-chats`,
+
+  // Nano 圖片歷史
+  settingsNanoHistory: `${API_BASE_URL}/api/settings/nano-history`,
 }
 
 // WebSocket URL (與 API 同源)

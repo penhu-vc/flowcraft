@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { API_ENDPOINTS } from '../api/config'
 
 export interface DataRecord {
   id: string
@@ -19,23 +20,59 @@ export interface DataCollection {
   updatedAt: string
 }
 
-const STORAGE_KEY = 'flowcraft_collections'
+let saveTimer: ReturnType<typeof setTimeout> | null = null
 
-function loadFromStorage(): DataCollection[] {
+async function loadFromBackend(): Promise<DataCollection[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
+    const resp = await fetch(API_ENDPOINTS.settingsCollections)
+    const data = await resp.json()
+    if (data.ok && data.collections?.length) return data.collections
+  } catch { /* ignore */ }
+  // Migration: try localStorage
+  try {
+    const raw = localStorage.getItem('flowcraft_collections')
+    if (raw) {
+      const collections = JSON.parse(raw)
+      if (collections.length) {
+        // Migrate to backend then clear
+        fetch(API_ENDPOINTS.settingsCollections, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collections }),
+        }).then(() => localStorage.removeItem('flowcraft_collections')).catch(() => {})
+        return collections
+      }
+    }
+  } catch { /* ignore */ }
+  return []
 }
 
-function saveToStorage(collections: DataCollection[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(collections))
+function persistToBackend(collections: DataCollection[]) {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    try {
+      await fetch(API_ENDPOINTS.settingsCollections, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collections }),
+      })
+    } catch { /* ignore */ }
+  }, 500)
 }
 
 export const useCollectionStore = defineStore('collection', () => {
-  const collections = ref<DataCollection[]>(loadFromStorage())
+  const collections = ref<DataCollection[]>([])
+
+  // Load on first use
+  loadFromBackend().then(items => {
+    if (items.length > 0 && collections.value.length === 0) {
+      collections.value = items
+    }
+  })
+
+  function save() {
+    persistToBackend(collections.value)
+  }
 
   function createCollection(name: string, description = '', schema = '') {
     const collection: DataCollection = {
@@ -48,13 +85,13 @@ export const useCollectionStore = defineStore('collection', () => {
       updatedAt: new Date().toISOString(),
     }
     collections.value.unshift(collection)
-    saveToStorage(collections.value)
+    save()
     return collection
   }
 
   function deleteCollection(id: string) {
     collections.value = collections.value.filter(c => c.id !== id)
-    saveToStorage(collections.value)
+    save()
   }
 
   function getCollection(id: string) {
@@ -75,7 +112,7 @@ export const useCollectionStore = defineStore('collection', () => {
 
     collection.records.push(record)
     collection.updatedAt = new Date().toISOString()
-    saveToStorage(collections.value)
+    save()
     return true
   }
 
@@ -85,7 +122,7 @@ export const useCollectionStore = defineStore('collection', () => {
 
     collection.records = collection.records.filter(r => r.id !== recordId)
     collection.updatedAt = new Date().toISOString()
-    saveToStorage(collections.value)
+    save()
     return true
   }
 
@@ -95,7 +132,7 @@ export const useCollectionStore = defineStore('collection', () => {
 
     collection.records = []
     collection.updatedAt = new Date().toISOString()
-    saveToStorage(collections.value)
+    save()
     return true
   }
 
