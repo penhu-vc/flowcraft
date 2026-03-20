@@ -7,6 +7,7 @@ import cors from 'cors'
 import proxyRouter from './routes/proxy'
 import mediaRouter from './routes/media'
 import settingsRouter, { loadSettings } from './routes/settings'
+import { loadStorageConfig } from './dataDir'
 import { createWorkflowRouter } from './routes/workflow'
 
 const app = express()
@@ -40,6 +41,7 @@ app.use('/api', settingsRouter)               // /api/settings/*, /api/auth/*, /
 app.use('/api', createWorkflowRouter(io))     // /api/execute, /api/workflow/*, /api/workflows/*, /api/prompts/*
 
 // ── Load persisted settings ─────────────────────────────────────
+loadStorageConfig()   // 必須在 loadSettings 之前，先決定資料目錄
 loadSettings()
 
 // ── Socket.io ─────────────────────────────────────────────────────

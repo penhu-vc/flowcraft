@@ -3,8 +3,10 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from '
 import { join } from 'path'
 import { startAuthFlow } from '../auth/saveSession'
 import { handleTelegramWebhook } from '../telegram-webhook'
+import { LOCAL_DATA_DIR, getDataDir, getStorageConfig, setStorageConfig } from '../dataDir'
 
-const SETTINGS_DIR = join(__dirname, '../../data')
+// 設定檔永遠放本地
+const SETTINGS_DIR = LOCAL_DATA_DIR
 const GCP_CREDENTIALS_FILE = join(SETTINGS_DIR, 'gcp-credentials.json')
 const GEMINI_SETTINGS_FILE = join(SETTINGS_DIR, 'gemini-settings.json')
 const API_KEYS_FILE = join(SETTINGS_DIR, 'api-keys.json')
@@ -324,5 +326,30 @@ export function loadSettings() {
         }
     }
 }
+
+// ── Storage Mode (Local / NAS) ────────────────────────────────────
+router.get('/settings/storage', (_req, res) => {
+    try {
+        const config = getStorageConfig()
+        res.json({ ok: true, ...config })
+    } catch (e: unknown) {
+        res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    }
+})
+
+router.put('/settings/storage', (req, res) => {
+    try {
+        const { mode, nasPath } = req.body
+        if (mode !== 'local' && mode !== 'nas') {
+            return res.status(400).json({ ok: false, error: 'mode must be "local" or "nas"' })
+        }
+        setStorageConfig({ mode, ...(nasPath ? { nasPath } : {}) })
+        const config = getStorageConfig()
+        console.log(`[storage] switched to ${mode}, dataDir=${getDataDir()}`)
+        res.json({ ok: true, ...config })
+    } catch (e: unknown) {
+        res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    }
+})
 
 export default router

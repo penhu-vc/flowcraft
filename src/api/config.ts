@@ -55,6 +55,9 @@ export const API_ENDPOINTS = {
 
   // Nano 圖片歷史
   settingsNanoHistory: `${API_BASE_URL}/api/settings/nano-history`,
+
+  // 儲存模式（本地 / NAS）
+  settingsStorage: `${API_BASE_URL}/api/settings/storage`,
 }
 
 // WebSocket URL (與 API 同源)

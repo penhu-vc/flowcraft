@@ -2,6 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { getDataDir, ensureDir } from '../dataDir'
 
 import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from '../services/veo'
 import { createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from '../services/nano'
@@ -11,22 +12,16 @@ import { getVideosFromUrl } from '../utils/youtube-utils'
 
 const router = Router()
 
-// ── Setup directories ─────────────────────────────────────────────
-const SETTINGS_DIR = join(__dirname, '../../data')
-const GENERATED_FILES_DIR = join(SETTINGS_DIR, 'generated')
-const ASSETS_DIR = join(GENERATED_FILES_DIR, 'assets')
-const ASSETS_INDEX_FILE = join(SETTINGS_DIR, 'assets-index.json')
-
-// Ensure dirs exist
-if (!existsSync(GENERATED_FILES_DIR)) {
-    mkdirSync(GENERATED_FILES_DIR, { recursive: true })
-}
-if (!existsSync(ASSETS_DIR)) {
-    mkdirSync(ASSETS_DIR, { recursive: true })
-}
+// ── Setup directories (動態，支援 NAS 切換) ────────────────────────
+const getGeneratedFilesDir = () => ensureDir('generated')
+const getAssetsDir = () => ensureDir('generated', 'assets')
+const getAssetsIndexFile = () => join(getDataDir(), 'assets-index.json')
 
 // ── Serve static generated files ──────────────────────────────────
-router.use('/generated', express.static(GENERATED_FILES_DIR))
+// 每次請求時動態解析路徑
+router.use('/generated', (req, res, next) => {
+    express.static(getGeneratedFilesDir())(req, res, next)
+})
 
 // ── Assets index helpers ──────────────────────────────────────────
 interface AssetIndexEntry {
@@ -39,8 +34,8 @@ interface AssetIndexEntry {
 
 function loadAssetsIndex(): AssetIndexEntry[] {
     try {
-        if (existsSync(ASSETS_INDEX_FILE)) {
-            return JSON.parse(readFileSync(ASSETS_INDEX_FILE, 'utf-8'))
+        if (existsSync(getAssetsIndexFile())) {
+            return JSON.parse(readFileSync(getAssetsIndexFile(), 'utf-8'))
         }
     } catch {
         // ignore parse errors
@@ -49,7 +44,7 @@ function loadAssetsIndex(): AssetIndexEntry[] {
 }
 
 function saveAssetsIndex(index: AssetIndexEntry[]): void {
-    writeFileSync(ASSETS_INDEX_FILE, JSON.stringify(index, null, 2), 'utf-8')
+    writeFileSync(getAssetsIndexFile(), JSON.stringify(index, null, 2), 'utf-8')
 }
 
 // ── Veo routes ────────────────────────────────────────────────────
@@ -169,8 +164,7 @@ router.post('/api/nano/jobs/:id/replace-output', (req, res) => {
     const output = job.outputs?.[outputIndex]
     if (!output?.localPath) return res.status(404).json({ ok: false, error: 'Output not found' })
     try {
-        const dataDir = join(__dirname, '../../data')
-        const filePath = join(dataDir, output.localPath.replace(/^\/?(generated\/)/, '$1'))
+        const filePath = join(getDataDir(), output.localPath.replace(/^\/?(generated\/)/, '$1'))
         const raw = base64Data.replace(/^data:[^;]+;base64,/, '')
         writeFileSync(filePath, Buffer.from(raw, 'base64'))
         res.json({ ok: true })
@@ -190,7 +184,7 @@ router.post('/api/assets/upload', (req, res) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
         const fname = `${id}.${ext}`
         const data = base64.replace(/^data:[^;]+;base64,/, '')
-        writeFileSync(join(ASSETS_DIR, fname), Buffer.from(data, 'base64'))
+        writeFileSync(join(getAssetsDir(), fname), Buffer.from(data, 'base64'))
         res.json({ ok: true, url: `/generated/assets/${fname}`, filename: filename || fname })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
@@ -200,8 +194,8 @@ router.post('/api/assets/upload', (req, res) => {
 
 router.get('/api/assets', (_req, res) => {
     try {
-        const files = existsSync(ASSETS_DIR)
-            ? readdirSync(ASSETS_DIR).filter((f: string) => !f.startsWith('.'))
+        const files = existsSync(getAssetsDir())
+            ? readdirSync(getAssetsDir()).filter((f: string) => !f.startsWith('.'))
             : []
         res.json({ ok: true, files: files.map((f: string) => `/generated/assets/${f}`) })
     } catch {

@@ -2,6 +2,7 @@ import { GenerateVideosOperation, GoogleGenAI, VideoCompressionQuality, VideoGen
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { getDataDir, LOCAL_DATA_DIR, ensureDir } from '../dataDir'
 
 type VeoMode = 'apiKey' | 'gcp'
 type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
@@ -77,24 +78,24 @@ function cloneRequestSnapshot(payload: VeoGenerationRequest): VeoGenerationReque
   return JSON.parse(JSON.stringify(payload)) as VeoGenerationRequest
 }
 
-const DATA_DIR = join(__dirname, '../../data')
-const GENERATED_DIR = join(DATA_DIR, 'generated', 'veo')
-const JOBS_FILE = join(DATA_DIR, 'veo-jobs.json')
-const GEMINI_SETTINGS_FILE = join(DATA_DIR, 'gemini-settings.json')
-const GCP_CREDENTIALS_FILE = join(DATA_DIR, 'gcp-credentials.json')
-
-mkdirSync(GENERATED_DIR, { recursive: true })
+// 路徑動態取得，支援本地/NAS 切換
+const getGeneratedDir = () => ensureDir('generated', 'veo')
+const getJobsFile = () => join(getDataDir(), 'veo-jobs.json')
+// 設定檔永遠放本地（不隨 NAS 移動）
+const GEMINI_SETTINGS_FILE = join(LOCAL_DATA_DIR, 'gemini-settings.json')
+const GCP_CREDENTIALS_FILE = join(LOCAL_DATA_DIR, 'gcp-credentials.json')
 
 const jobs = new Map<string, VeoJobRecord>()
 loadJobs()
 
 function loadJobs() {
-  if (!existsSync(JOBS_FILE)) {
+  const jobsFile = getJobsFile()
+  if (!existsSync(jobsFile)) {
     return
   }
 
   try {
-    const parsed = JSON.parse(readFileSync(JOBS_FILE, 'utf8')) as VeoJobRecord[]
+    const parsed = JSON.parse(readFileSync(jobsFile, 'utf8')) as VeoJobRecord[]
     for (const job of parsed) {
       jobs.set(job.id, job)
     }
@@ -105,7 +106,7 @@ function loadJobs() {
 
 function persistJobs() {
   writeFileSync(
-    JOBS_FILE,
+    getJobsFile(),
     JSON.stringify(
       [...jobs.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
       null,
@@ -312,7 +313,7 @@ function extractProgress(metadata?: Record<string, unknown>) {
 
 async function hydrateOutputs(client: GoogleGenAI, job: VeoJobRecord, operation: GenerateVideosOperation) {
   const generatedVideos = operation.response?.generatedVideos || []
-  const jobDir = join(GENERATED_DIR, job.id)
+  const jobDir = join(getGeneratedDir(), job.id)
   mkdirSync(jobDir, { recursive: true })
 
   const outputs: StoredVideo[] = []
@@ -467,7 +468,7 @@ export function deleteVeoJob(jobId: string) {
     return false
   }
 
-  rmSync(join(GENERATED_DIR, jobId), { recursive: true, force: true })
+  rmSync(join(getGeneratedDir(), jobId), { recursive: true, force: true })
   jobs.delete(jobId)
   persistJobs()
   return true

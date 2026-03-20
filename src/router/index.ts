@@ -1,11 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+const LAST_ROUTE_KEY = 'fc_last_route'
+const SKIP_SAVE = ['/', '/editor/']
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
-      redirect: '/dashboard',
+      redirect: () => {
+        const last = localStorage.getItem(LAST_ROUTE_KEY)
+        return last || '/dashboard'
+      },
     },
     {
       path: '/dashboard',
@@ -40,6 +46,12 @@ const router = createRouter({
       component: () => import('../views/VeoStudio.vue'),
     },
   ],
+})
+
+router.afterEach((to) => {
+  if (!SKIP_SAVE.some(prefix => to.path.startsWith(prefix))) {
+    localStorage.setItem(LAST_ROUTE_KEY, to.path)
+  }
 })
 
 export default router

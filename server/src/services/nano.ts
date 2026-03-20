@@ -11,6 +11,7 @@ import { GoogleGenAI } from '@google/genai'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { getDataDir, LOCAL_DATA_DIR, ensureDir } from '../dataDir'
 
 type NanoMode = 'apiKey' | 'gcp'
 type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
@@ -76,21 +77,21 @@ export interface NanoChatSession {
   history: Array<{ role: 'user' | 'model'; text?: string; imageUrl?: string }>
 }
 
-const DATA_DIR = join(__dirname, '../../data')
-const GENERATED_DIR = join(DATA_DIR, 'generated', 'nano')
-const JOBS_FILE = join(DATA_DIR, 'nano-jobs.json')
-const GEMINI_SETTINGS_FILE = join(DATA_DIR, 'gemini-settings.json')
-const GCP_CREDENTIALS_FILE = join(DATA_DIR, 'gcp-credentials.json')
-
-mkdirSync(GENERATED_DIR, { recursive: true })
+// 路徑動態取得，支援本地/NAS 切換
+const getGeneratedDir = () => ensureDir('generated', 'nano')
+const getJobsFile = () => join(getDataDir(), 'nano-jobs.json')
+// 設定檔永遠放本地
+const GEMINI_SETTINGS_FILE = join(LOCAL_DATA_DIR, 'gemini-settings.json')
+const GCP_CREDENTIALS_FILE = join(LOCAL_DATA_DIR, 'gcp-credentials.json')
 
 const jobs = new Map<string, NanoJobRecord>()
 loadJobs()
 
 function loadJobs() {
-  if (!existsSync(JOBS_FILE)) return
+  const jobsFile = getJobsFile()
+  if (!existsSync(jobsFile)) return
   try {
-    const parsed = JSON.parse(readFileSync(JOBS_FILE, 'utf8')) as NanoJobRecord[]
+    const parsed = JSON.parse(readFileSync(jobsFile, 'utf8')) as NanoJobRecord[]
     for (const job of parsed) {
       jobs.set(job.id, job)
     }
@@ -101,7 +102,7 @@ function loadJobs() {
 
 function persistJobs() {
   writeFileSync(
-    JOBS_FILE,
+    getJobsFile(),
     JSON.stringify(
       [...jobs.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
       null,
@@ -253,7 +254,7 @@ export async function createNanoJob(payload: NanoGenerationRequest): Promise<Nan
 
   try {
     const numberOfImages = payload.numberOfImages || 1
-    const jobDir = join(GENERATED_DIR, job.id)
+    const jobDir = join(getGeneratedDir(), job.id)
     mkdirSync(jobDir, { recursive: true })
 
     const outputs: StoredImage[] = []
@@ -384,7 +385,7 @@ export function deleteNanoJob(jobId: string) {
   const job = jobs.get(jobId)
   if (!job) return false
 
-  rmSync(join(GENERATED_DIR, jobId), { recursive: true, force: true })
+  rmSync(join(getGeneratedDir(), jobId), { recursive: true, force: true })
   jobs.delete(jobId)
   persistJobs()
   return true

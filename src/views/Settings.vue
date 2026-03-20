@@ -148,6 +148,57 @@
       </div>
     </div>
 
+    <!-- 儲存位置 -->
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header">
+        <span class="card-title">💾 儲存位置</span>
+        <span class="storage-badge" :class="storageConfig.mode === 'nas' ? 'badge-nas' : 'badge-local'">
+          {{ storageConfig.mode === 'nas' ? '🗄️ NAS' : '💻 本地' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 13px;">
+          選擇 AI 生成的圖片、影片、任務歷史的儲存位置。設定檔（API Key、GCP 憑證）永遠存在本地。
+        </p>
+
+        <!-- 模式選擇 -->
+        <div class="mode-selector" style="margin-bottom: 16px;">
+          <button class="mode-btn" :class="{ active: storageConfig.mode === 'local' }" @click="switchStorage('local')">
+            💻 本地 <span style="font-size:11px; opacity:0.7">（server/data/）</span>
+          </button>
+          <button class="mode-btn" :class="{ active: storageConfig.mode === 'nas' }" @click="switchStorage('nas')">
+            🗄️ NAS <span style="font-size:11px; opacity:0.7">（192.168.1.108）</span>
+          </button>
+        </div>
+
+        <!-- NAS 路徑設定 -->
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">NAS 路徑（UNC）</label>
+          <div style="display: flex; gap: 8px;">
+            <input
+              type="text"
+              class="form-control"
+              v-model="storageConfig.nasPath"
+              placeholder="\\192.168.1.108\penhu_video\flowcraft\data"
+              style="font-family: monospace; font-size: 13px;"
+            />
+            <button class="btn btn-secondary" @click="saveStoragePath">💾</button>
+          </div>
+        </div>
+
+        <!-- 狀態 -->
+        <div class="status-box" :class="storageConfig.nasAvailable ? 'status-connected' : 'status-disconnected'">
+          <span class="status-icon">{{ storageConfig.nasAvailable ? '✅' : '❌' }}</span>
+          <span>NAS {{ storageConfig.nasAvailable ? '可連線' : '無法連線（請確認 NAS 已掛載）' }}</span>
+        </div>
+
+        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+          <div>📁 目前資料目錄：<code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">{{ storageConfig.mode === 'nas' && storageConfig.nasAvailable ? storageConfig.nasPath : 'server/data/' }}</code></div>
+          <div style="margin-top: 4px;">⚠️ 切換後，新生成的內容會存到新位置；舊資料不會自動搬移。</div>
+        </div>
+      </div>
+    </div>
+
     <!-- 訊息提示 -->
     <div v-if="message" class="toast" :class="messageType">
       {{ message }}
@@ -388,9 +439,50 @@ async function loadApiKeys() {
   }
 }
 
+// ── Storage ────────────────────────────────────────────────────────
+const storageConfig = ref({
+  mode: 'local' as 'local' | 'nas',
+  nasPath: '\\\\192.168.1.108\\penhu_video\\flowcraft\\data',
+  nasAvailable: false,
+})
+
+async function loadStorageConfig() {
+  try {
+    const res = await fetch(API_ENDPOINTS.settingsStorage)
+    const data = await res.json()
+    if (data.ok) {
+      storageConfig.value = { mode: data.mode, nasPath: data.nasPath, nasAvailable: data.nasAvailable }
+    }
+  } catch {}
+}
+
+async function switchStorage(mode: 'local' | 'nas') {
+  try {
+    const res = await fetch(API_ENDPOINTS.settingsStorage, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, nasPath: storageConfig.value.nasPath }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      storageConfig.value = { mode: data.mode, nasPath: data.nasPath, nasAvailable: data.nasAvailable }
+      showMessage(`已切換到 ${mode === 'nas' ? 'NAS' : '本地'} 儲存`)
+    } else {
+      showMessage(data.error || '切換失敗', 'error')
+    }
+  } catch {
+    showMessage('切換失敗', 'error')
+  }
+}
+
+async function saveStoragePath() {
+  await switchStorage(storageConfig.value.mode)
+}
+
 onMounted(() => {
   checkGeminiStatus()
   loadApiKeys()
+  loadStorageConfig()
 })
 </script>
 
@@ -542,5 +634,27 @@ onMounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.storage-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.badge-local {
+  background: rgba(99, 179, 237, 0.15);
+  color: #63b3ed;
+  border: 1px solid rgba(99, 179, 237, 0.3);
+}
+.badge-nas {
+  background: rgba(72, 187, 120, 0.15);
+  color: #48bb78;
+  border: 1px solid rgba(72, 187, 120, 0.3);
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 </style>

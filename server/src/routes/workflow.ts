@@ -5,8 +5,9 @@ import { join } from 'path'
 import { executeNode } from '../executor'
 import { WorkflowEngine } from '../execution/WorkflowEngine'
 import { Workflow } from '../execution/types'
+import { getDataDir } from '../dataDir'
 
-const WORKFLOWS_FILE = join(__dirname, '../../data/workflows.json')
+const getWorkflowsFile = () => join(getDataDir(), 'workflows.json')
 
 export function createWorkflowRouter(io: SocketIO): Router {
     const router = Router()
@@ -103,7 +104,7 @@ export function createWorkflowRouter(io: SocketIO): Router {
                 return res.status(400).json({ ok: false, error: 'workflows array required' })
             }
 
-            writeFileSync(WORKFLOWS_FILE, JSON.stringify(workflows, null, 2), 'utf-8')
+            writeFileSync(getWorkflowsFile(), JSON.stringify(workflows, null, 2), 'utf-8')
             res.json({ ok: true, message: 'Workflows synced to file', count: workflows.length })
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err)
@@ -113,11 +114,11 @@ export function createWorkflowRouter(io: SocketIO): Router {
 
     router.get('/workflows', (_req, res) => {
         try {
-            if (!existsSync(WORKFLOWS_FILE)) {
+            if (!existsSync(getWorkflowsFile())) {
                 return res.json({ ok: true, workflows: [] })
             }
 
-            const data = readFileSync(WORKFLOWS_FILE, 'utf-8')
+            const data = readFileSync(getWorkflowsFile(), 'utf-8')
             const workflows = JSON.parse(data)
             res.json({ ok: true, workflows })
         } catch (err: unknown) {
@@ -128,11 +129,11 @@ export function createWorkflowRouter(io: SocketIO): Router {
 
     router.get('/workflows/:id', (req, res) => {
         try {
-            if (!existsSync(WORKFLOWS_FILE)) {
+            if (!existsSync(getWorkflowsFile())) {
                 return res.status(404).json({ ok: false, error: 'Workflow not found' })
             }
 
-            const data = readFileSync(WORKFLOWS_FILE, 'utf-8')
+            const data = readFileSync(getWorkflowsFile(), 'utf-8')
             const workflows = JSON.parse(data)
             const workflow = workflows.find((w: any) => w.id === req.params.id)
 
