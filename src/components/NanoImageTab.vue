@@ -47,6 +47,7 @@
       @remove="removeJob"
       @use-as-edit-source="useAsEditSource"
       @use-as-multiangle-source="useAsMultiangleSource"
+      @ai-reharmonize="onAiReharmonize"
     />
 
     <!-- Lightbox -->
@@ -54,6 +55,43 @@
       <div v-if="lightboxUrl" class="lightbox-overlay" @click.self="closeLightbox" @keydown="onLightboxKeydown" tabindex="0" ref="lightboxRef">
         <button class="lightbox-close" @click="closeLightbox">&times;</button>
         <img :src="lightboxUrl" class="lightbox-img" />
+      </div>
+    </Teleport>
+
+    <!-- AI Reharmonize Modal -->
+    <Teleport to="body">
+      <div v-if="showReharmonizeModal" class="rh-overlay" @click.self="showReharmonizeModal = false">
+        <div class="rh-modal">
+          <div class="rh-modal-header">
+            <span>🤖 AI Re-harmonize</span>
+            <button class="rh-close" @click="showReharmonizeModal = false">&times;</button>
+          </div>
+          <div class="rh-modal-body">
+            <div class="rh-preview">
+              <img :src="reharmonizeUrl" class="rh-preview-img" />
+            </div>
+            <div class="rh-field">
+              <label>人種</label>
+              <select v-model="reharmonizeEthnicity" class="form-input form-input-sm">
+                <option value="Asian">亞洲人</option>
+                <option value="Caucasian">歐美人</option>
+                <option value="African">非裔</option>
+                <option value="Latino">拉丁裔</option>
+                <option value="Middle Eastern">中東</option>
+              </select>
+            </div>
+            <div class="rh-field">
+              <label>年齡</label>
+              <input type="number" v-model.number="reharmonizeAge" min="1" max="100" class="form-input form-input-sm" />
+            </div>
+          </div>
+          <div class="rh-modal-footer">
+            <button class="btn btn-secondary btn-sm" @click="showReharmonizeModal = false" :disabled="reharmonizeLoading">取消</button>
+            <button class="btn btn-primary btn-sm" @click="confirmReharmonize" :disabled="reharmonizeLoading">
+              {{ reharmonizeLoading ? '處理中...' : '🚀 開始' }}
+            </button>
+          </div>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -713,6 +751,83 @@ function useAsMultiangleSource(localUrl: string) {
 
 const multiAngleSourceUrl = ref('')
 
+// ── AI Reharmonize ──
+const showReharmonizeModal = ref(false)
+const reharmonizeUrl = ref('')
+const reharmonizeEthnicity = ref('Asian')
+const reharmonizeAge = ref(20)
+const reharmonizeLoading = ref(false)
+
+function onAiReharmonize(localUrl: string) {
+  reharmonizeUrl.value = resolveMediaUrl(localUrl)
+  reharmonizeEthnicity.value = 'Asian'
+  reharmonizeAge.value = 20
+  showReharmonizeModal.value = true
+}
+
+async function confirmReharmonize() {
+  reharmonizeLoading.value = true
+  try {
+    // Step 1: Fetch image as base64
+    const imgRes = await fetch(reharmonizeUrl.value)
+    const blob = await imgRes.blob()
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve((reader.result as string).split(',')[1])
+      reader.readAsDataURL(blob)
+    })
+
+    // Step 2: AI describe the image
+    const descRes = await fetch(`${API_BASE_URL}/api/nano/describe-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: { base64Data: base64, mimeType: blob.type || 'image/png' },
+        aspects: ['background', 'lighting', 'composition', 'color', 'clothing', 'pose'],
+      }),
+    })
+    const descData = await descRes.json()
+    const sceneDesc = descData.description
+      ? Object.entries(descData.description).map(([k, v]) => `${k}: ${v}`).join('. ')
+      : ''
+
+    // Step 3: Build prompt
+    const ethnicityAge = `A ${reharmonizeAge.value}-year-old ${reharmonizeEthnicity.value} person.`
+    const reharmonizeInstruction = `Re-harmonize the entire image so the subject and environment become one coherent, naturally captured photograph. Match the subject's lighting, color temperature, contrast, edge softness, shadow behavior, and atmospheric depth to the surrounding scene. Strengthen physically plausible directional light from the main scene light source, and add realistic shadow transitions on the face, neck, hair, and clothing. Add subtle ambient bounce light and environmental color spill from nearby surfaces and objects. Remove any cutout, pasted, sticker-like, or composited appearance. Ensure the final result looks fully integrated, spatially believable, and photographically consistent, with realistic edges, natural tonal depth, and scene-matched lighting across the entire image.`
+    const fullPrompt = `${ethnicityAge} ${sceneDesc} ${reharmonizeInstruction}`
+
+    // Step 4: Submit edit job
+    const payload: NanoGenerationPayload = {
+      sourceMode: 'edit',
+      prompt: fullPrompt,
+      image: { base64Data: base64, mimeType: blob.type || 'image/png', previewUrl: reharmonizeUrl.value },
+      personGeneration: 'allow_adult',
+    }
+
+    const placeholderId = `placeholder-${Date.now()}`
+    jobs.value.unshift({
+      id: placeholderId,
+      status: 'running',
+      sourceMode: 'edit',
+      prompt: fullPrompt,
+      createdAt: new Date().toISOString(),
+      outputs: [],
+    } as any)
+    startPolling()
+
+    const { job } = await createNanoJob(payload)
+    const idx = jobs.value.findIndex(j => j.id === placeholderId)
+    if (idx >= 0) jobs.value.splice(idx, 1, job)
+    else jobs.value.unshift(job)
+
+    showReharmonizeModal.value = false
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    reharmonizeLoading.value = false
+  }
+}
+
 function normalizeAsset(asset?: NanoInlineAsset | null): NanoInlineAsset | null {
   if (!asset?.base64Data) return null
   const previewUrl = asset.previewUrl || asset.base64Data
@@ -838,5 +953,77 @@ onBeforeUnmount(stopPolling)
 }
 .lightbox-close:hover {
   opacity: 1;
+}
+
+/* AI Reharmonize Modal */
+.rh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rh-modal {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+  width: 380px;
+  max-width: 92vw;
+  overflow: hidden;
+}
+.rh-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border, #333);
+  font-weight: 600;
+  font-size: 15px;
+}
+.rh-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #aaa);
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+.rh-modal-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.rh-preview {
+  text-align: center;
+}
+.rh-preview-img {
+  max-height: 180px;
+  max-width: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.rh-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rh-field label {
+  min-width: 40px;
+  font-size: 14px;
+  color: var(--text-secondary, #aaa);
+}
+.rh-field select,
+.rh-field input[type="number"] {
+  flex: 1;
+}
+.rh-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border, #333);
 }
 </style>

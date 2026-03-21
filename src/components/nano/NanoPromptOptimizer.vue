@@ -85,6 +85,8 @@
           <div class="ref-aspect-presets">
             <button class="preset-pill" :class="{ active: isPresetActive('person') }" @click="applyPreset('person')">👤 人物參考</button>
             <button class="preset-pill" :class="{ active: isPresetActive('scene') }" @click="applyPreset('scene')">🖼️ 參考圖片</button>
+            <button class="preset-pill" :class="{ active: isPresetActive('background') }" @click="applyPreset('background')">🏞️ 背景</button>
+            <button class="preset-pill" :class="{ active: isFixedTraitsActive() }" @click="toggleFixedTraits()">📌 固定特徵</button>
           </div>
           <div class="ref-aspect-rows">
             <div
@@ -560,7 +562,11 @@ interface RefSlot {
   result: Record<string, string> | null
 }
 
+const FIXED_TRAIT_KEYS = ['ethnicity', 'age']
+
 const ASPECT_DEFAULTS: { key: string; label: string }[] = [
+  { key: 'ethnicity', label: '人種' },
+  { key: 'age', label: '年齡' },
   { key: 'facial', label: '五官' },
   { key: 'hairstyle', label: '髮型' },
   { key: 'skintone', label: '膚色' },
@@ -579,7 +585,11 @@ function createEmptySlot(): RefSlot {
     preview: '',
     base64: '',
     mime: '',
-    aspects: ASPECT_DEFAULTS.map(a => ({ ...a, checked: true, userText: '' })),
+    aspects: ASPECT_DEFAULTS.map(a => {
+      if (a.key === 'ethnicity') return { ...a, checked: false, userText: '亞洲人' }
+      if (a.key === 'age') return { ...a, checked: false, userText: '20歲' }
+      return { ...a, checked: true, userText: '' }
+    }),
     result: null,
   }
 }
@@ -726,22 +736,48 @@ const describeSlots = reactive<RefSlot[]>([
 
 const PERSON_ASPECTS = ['facial', 'hairstyle', 'skintone', 'expression']
 const SCENE_ASPECTS = ['bodytype', 'pose', 'clothing', 'background', 'lighting', 'composition', 'color']
+const BACKGROUND_ASPECTS = ['background', 'lighting', 'composition', 'color']
 
-function isPresetActive(preset: 'person' | 'scene'): boolean {
+type PresetType = 'person' | 'scene' | 'background'
+const PRESET_MAP: Record<PresetType, string[]> = {
+  person: PERSON_ASPECTS,
+  scene: SCENE_ASPECTS,
+  background: BACKGROUND_ASPECTS,
+}
+
+function isPresetActive(preset: PresetType): boolean {
   const slot = describeSlots[activeSlotIdx.value]
   if (!slot) return false
-  const keys = preset === 'person' ? PERSON_ASPECTS : SCENE_ASPECTS
+  const keys = PRESET_MAP[preset]
   const checked = slot.aspects.filter(a => a.checked).map(a => a.key)
   return keys.every(k => checked.includes(k)) && checked.every(k => keys.includes(k))
 }
 
-function applyPreset(preset: 'person' | 'scene') {
+function applyPreset(preset: PresetType) {
   const slot = describeSlots[activeSlotIdx.value]
   if (!slot) return
-  const keys = preset === 'person' ? PERSON_ASPECTS : SCENE_ASPECTS
+  const keys = PRESET_MAP[preset]
   for (const asp of slot.aspects) {
     if (getAspectOwner(asp.key) >= 0) continue // skip occupied
     asp.checked = keys.includes(asp.key)
+  }
+  rebuildRefDescription()
+}
+
+function isFixedTraitsActive(): boolean {
+  const slot = describeSlots[activeSlotIdx.value]
+  if (!slot) return false
+  return FIXED_TRAIT_KEYS.every(k => slot.aspects.find(a => a.key === k)?.checked)
+}
+
+function toggleFixedTraits() {
+  const slot = describeSlots[activeSlotIdx.value]
+  if (!slot) return
+  const shouldEnable = !isFixedTraitsActive()
+  for (const asp of slot.aspects) {
+    if (FIXED_TRAIT_KEYS.includes(asp.key)) {
+      asp.checked = shouldEnable
+    }
   }
   rebuildRefDescription()
 }
