@@ -71,6 +71,9 @@
                 <button class="btn btn-outline btn-sm" @click="$emit('use-as-multiangle-source', output.localUrl!)">
                   📐 多角度
                 </button>
+                <button class="btn btn-outline btn-sm" @click="$emit('ai-reharmonize', output.localUrl!)">
+                  🤖 AI
+                </button>
               </div>
             </div>
           </div>
@@ -119,6 +122,7 @@ defineEmits<{
   (e: 'remove', jobId: string): void
   (e: 'use-as-edit-source', localUrl: string): void
   (e: 'use-as-multiangle-source', localUrl: string): void
+  (e: 'ai-reharmonize', localUrl: string): void
 }>()
 
 const modeLabelMap: Record<NanoSourceMode, string> = {
