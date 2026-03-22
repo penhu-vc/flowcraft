@@ -446,7 +446,25 @@ router.get('/api/nano/status', (_req, res) => {
 })
 
 router.get('/api/nano/jobs', (_req, res) => {
-    res.json({ ok: true, jobs: listNanoJobs() })
+    const jobs = listNanoJobs().map((job: any) => ({
+        id: job.id,
+        status: job.status,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        sourceMode: job.sourceMode,
+        prompt: job.prompt,
+        error: job.error,
+        outputs: job.outputs,
+        // Include snapshot without base64 for "恢復設定" button
+        requestSnapshot: job.requestSnapshot ? (() => {
+            const snap = { ...job.requestSnapshot }
+            if (snap.image) snap.image = { ...snap.image, base64Data: '[stripped]', previewUrl: undefined }
+            if (snap.maskImage) snap.maskImage = { ...snap.maskImage, base64Data: '[stripped]', previewUrl: undefined }
+            if (snap.referenceImages) snap.referenceImages = snap.referenceImages.map((r: any) => ({ ...r, base64Data: '[stripped]', previewUrl: undefined }))
+            return snap
+        })() : undefined,
+    }))
+    res.json({ ok: true, jobs })
 })
 
 router.post('/api/nano/generate', async (req, res) => {
@@ -493,7 +511,10 @@ router.post('/api/nano/jobs/:id/open-folder', (req, res) => {
     if (!job) return res.status(404).json({ ok: false, error: 'Job not found' })
     const folderPath = join(getDataDir(), 'generated', 'nano', req.params.id)
     try {
-        require('child_process').execSync(`open "${folderPath}"`)
+        const cmd = process.platform === 'win32'
+            ? `explorer "${folderPath.replace(/\//g, '\\')}"`
+            : `open "${folderPath}"`
+        require('child_process').execSync(cmd)
         res.json({ ok: true })
     } catch (err: unknown) {
         res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
