@@ -67,7 +67,11 @@
       "Bash(find /Users/yaja/projects/flowcraft/scripts -type f -exec wc -l {} +)",
       "Bash(find /Users/yaja/projects/flowcraft/docs -type f -exec wc -l {} +)",
       "Bash(find /Users/yaja/projects/flowcraft/server/src -type f -name *.ts -exec wc -l {} +)",
-      "Bash(curl -s http://localhost:55025/api/health)"
+      "Bash(curl -s http://localhost:55025/api/health)",
+      "Read(//Volumes/**)",
+      "Bash(mount)",
+      "Read(//Users/yaja/projects/nas/**)",
+      "Bash(rsync -avh --progress /Users/yaja/projects/flowcraft/server/data/ /Users/yaja/mnt/nas/flowcraft/data/)"
     ]
   }
 }

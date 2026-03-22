@@ -65,7 +65,14 @@ export interface NanoJobRecord {
 }
 
 function cloneRequestSnapshot(payload: NanoGenerationRequest): NanoGenerationRequest {
-  return JSON.parse(JSON.stringify(payload)) as NanoGenerationRequest
+  const clone = JSON.parse(JSON.stringify(payload)) as NanoGenerationRequest
+  // Strip base64Data from snapshot to avoid bloating nano-jobs.json
+  if (clone.image) clone.image = { ...clone.image, base64Data: '[stripped]' }
+  if (clone.maskImage) clone.maskImage = { ...clone.maskImage, base64Data: '[stripped]' }
+  if (clone.referenceImages) {
+    clone.referenceImages = clone.referenceImages.map(ref => ({ ...ref, base64Data: '[stripped]' }))
+  }
+  return clone
 }
 
 // Multi-turn chat session tracking

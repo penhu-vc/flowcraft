@@ -26,6 +26,7 @@
               <span class="badge" :class="job.status === 'completed' ? 'badge-active' : job.status === 'failed' ? 'badge-trigger' : 'badge-ai'">
                 {{ job.status }}
               </span>
+              <button class="btn btn-outline btn-sm" @click="openFolder(job.id)" title="在 Finder 打開">📂</button>
               <button v-if="job.requestSnapshot" class="btn btn-secondary btn-sm" @click="$emit('restore', job)">恢復設定</button>
               <button class="btn btn-danger btn-sm" @click="$emit('remove', job.id)">刪除</button>
             </div>
@@ -158,6 +159,12 @@ function formatDate(value: string) {
 function collectAsset(url: string) {
   const resolved = resolveMediaUrl(url)
   addAsset({ type: 'image', url: resolved, mimeType: 'image/jpeg', label: 'AI Studio' })
+}
+
+async function openFolder(jobId: string) {
+  try {
+    await fetch(`${API_BASE_URL}/api/nano/jobs/${jobId}/open-folder`, { method: 'POST' })
+  } catch { /* ignore */ }
 }
 
 // ── Lightbox (internal) ──

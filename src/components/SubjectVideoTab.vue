@@ -129,7 +129,37 @@
             <div v-if="job.status === 'running' || job.status === 'pending'" class="job-loading">
               ⏳ 生成中，約需 1-2 分鐘...
             </div>
-            <p v-if="job.error" class="error-text">{{ job.error }}</p>
+            <!-- 失敗說明 -->
+            <div v-if="job.error" class="failure-block">
+              <p class="error-text">{{ job.error }}</p>
+              <div v-if="job.failureAnalysis" class="failure-analysis">
+                <div class="fa-header">
+                  <span class="fa-badge">{{ job.failureAnalysis.reason }}</span>
+                </div>
+                <div class="fa-section">
+                  <div class="fa-label">說明</div>
+                  <p class="fa-text">{{ job.failureAnalysis.explanation }}</p>
+                </div>
+                <div v-if="job.failureAnalysis.promptIssues?.length" class="fa-section">
+                  <div class="fa-label">AI 檢測到的問題</div>
+                  <ul class="fa-issues">
+                    <li v-for="(issue, i) in job.failureAnalysis.promptIssues" :key="i">{{ issue }}</li>
+                  </ul>
+                </div>
+                <div class="fa-section">
+                  <div class="fa-label">修改建議</div>
+                  <p class="fa-text">{{ job.failureAnalysis.suggestion }}</p>
+                </div>
+              </div>
+              <button
+                v-else-if="job.status === 'failed'"
+                class="btn btn-secondary btn-sm fa-analyze-btn"
+                :disabled="analyzingJobId === job.id"
+                @click="runJobAnalysis(job)"
+              >
+                {{ analyzingJobId === job.id ? '🔍 AI 分析中...' : '🔍 AI 分析失敗原因' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -144,7 +174,9 @@ import {
   geminiPoll,
   describeForVideo,
   deleteVeoJob,
+  analyzeFailure,
   type VeoJob,
+  type FailureAnalysis,
 } from '../api/veo'
 
 interface RefSlot {
@@ -166,6 +198,8 @@ const generating = ref(false)
 const errorMessage = ref('')
 const jobs = ref<VeoJob[]>([])
 let pollTimer: number | null = null
+
+const analyzingJobId = ref<string | null>(null)
 
 const filledCount = computed(() => refSlots.value.filter(Boolean).length)
 const canGenerate = computed(() => filledCount.value > 0 && actionPrompt.value.trim().length > 0)
@@ -310,6 +344,22 @@ async function deleteJob(jobId: string) {
     jobs.value = jobs.value.filter((j) => j.id !== jobId)
   } catch {
     // ignore
+  }
+}
+
+async function runJobAnalysis(job: VeoJob) {
+  if (!job.error || !job.prompt) return
+  analyzingJobId.value = job.id
+  try {
+    const result = await analyzeFailure(job.prompt, job.error)
+    const idx = jobs.value.findIndex(j => j.id === job.id)
+    if (idx >= 0) {
+      jobs.value[idx] = { ...jobs.value[idx], failureAnalysis: result.analysis }
+    }
+  } catch {
+    // ignore
+  } finally {
+    analyzingJobId.value = null
   }
 }
 
@@ -475,6 +525,68 @@ onUnmounted(stopPolling)
   color: #f44;
   font-size: 13px;
   margin-top: 6px;
+}
+
+.failure-block {
+  margin-top: 6px;
+}
+
+.failure-analysis {
+  margin-top: 8px;
+  background: rgba(255, 100, 100, 0.06);
+  border: 1px solid rgba(255, 100, 100, 0.15);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.fa-header {
+  margin-bottom: 8px;
+}
+
+.fa-badge {
+  background: rgba(255, 100, 100, 0.2);
+  color: #fda4af;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fa-section {
+  margin-bottom: 8px;
+}
+
+.fa-section:last-child {
+  margin-bottom: 0;
+}
+
+.fa-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fa-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.fa-issues {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #fbbf24;
+  line-height: 1.8;
+}
+
+.fa-analyze-btn {
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .job-list {

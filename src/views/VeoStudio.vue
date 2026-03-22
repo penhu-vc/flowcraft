@@ -101,6 +101,7 @@
         :completed-video-options="completedVideoOptions"
         :can-add-ref="canAddRef"
         :optimizing="optimizerRef?.optimizing ?? false"
+        :has-api-key="hasApiKey"
         @switch-mode="switchMode"
         @update:lossless="lossless = $event"
         @update:expand-color="expandColor = $event"
@@ -158,10 +159,12 @@ import { useVeoAssetHandlers } from '../composables/useVeoAssetHandlers'
 import { API_BASE_URL } from '../api/config'
 import {
   createVeoJob,
+  createVeoJobGemini,
   deleteVeoJob,
   fetchVeoJob,
   fetchVeoJobs,
   fetchVeoStatus,
+  geminiPoll,
   type VeoGenerationPayload,
   type VeoInlineAsset,
   type VeoJob,
@@ -440,13 +443,20 @@ function buildPayload(): VeoGenerationPayload {
   }
 }
 
-async function submit() {
+async function submit(backend: 'vertex' | 'gemini' = 'vertex') {
   errorMessage.value = ''
   submitting.value = true
   try {
-    const { job } = await createVeoJob(buildPayload())
-    jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
-    startPolling()
+    const payload = buildPayload()
+    if (backend === 'gemini') {
+      const { job } = await createVeoJobGemini(payload)
+      jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
+      startGeminiPolling()
+    } else {
+      const { job } = await createVeoJob(payload)
+      jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
+      startPolling()
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -488,6 +498,34 @@ function stopPolling() {
   window.clearInterval(pollHandle.value)
   pollHandle.value = null
 }
+
+// Gemini API jobs 的 polling（用 gemini-poll endpoint）
+let geminiPollHandle: number | null = null
+function startGeminiPolling() {
+  // 也啟動常規 polling（Vertex AI jobs）
+  startPolling()
+  if (geminiPollHandle !== null) return
+  geminiPollHandle = window.setInterval(async () => {
+    const geminiJobs = jobs.value.filter(
+      j => (j.authMode as string) === 'gemini-api' && (j.status === 'pending' || j.status === 'running')
+    )
+    if (geminiJobs.length === 0) {
+      if (geminiPollHandle !== null) { clearInterval(geminiPollHandle); geminiPollHandle = null }
+      return
+    }
+    for (const job of geminiJobs) {
+      try {
+        const result = await geminiPoll(job.id)
+        const idx = jobs.value.findIndex(j => j.id === job.id)
+        if (idx >= 0) jobs.value[idx] = result.job
+      } catch { /* ignore */ }
+    }
+  }, 10000)
+}
+
+const hasApiKey = computed(() => {
+  return veoStatus.value.authMode === 'apiKey' || veoStatus.value.configured
+})
 
 async function removeJob(jobId: string) {
   await deleteVeoJob(jobId)
@@ -546,7 +584,10 @@ function useForExtend(jobId: string, index: number, localUrl?: string) {
 }
 
 onMounted(() => { void loadAll() })
-onBeforeUnmount(() => { stopPolling() })
+onBeforeUnmount(() => {
+  stopPolling()
+  if (geminiPollHandle !== null) { clearInterval(geminiPollHandle); geminiPollHandle = null }
+})
 </script>
 
 <style scoped>

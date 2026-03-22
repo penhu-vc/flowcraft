@@ -5,7 +5,7 @@ import { join } from 'path'
 import { execFile } from 'child_process'
 import { getDataDir, ensureDir, LOCAL_DATA_DIR } from '../dataDir'
 
-import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from '../services/veo'
+import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob, analyzePromptFailure } from '../services/veo'
 import { analyzeSceneSubjects, createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from '../services/nano'
 import { optimizeVeoPrompt } from '../veo-prompt-optimizer'
 import { optimizeNanoPrompt } from '../nano-prompt-optimizer'
@@ -105,6 +105,110 @@ router.delete('/api/veo/jobs/:id', (req, res) => {
         return res.status(404).json({ ok: false, error: 'Job not found' })
     }
     res.json({ ok: true })
+})
+
+// ── Analyze failure（手動觸發 AI 分析）─────────────────────────
+router.post('/api/veo/analyze-failure', async (req, res) => {
+    try {
+        const { prompt, error: errorStr } = req.body
+        if (!prompt || !errorStr) return res.status(400).json({ ok: false, error: 'prompt and error are required' })
+        const analysis = await analyzePromptFailure(prompt, errorStr)
+        res.json({ ok: true, analysis })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// ── Gemini API 通用生成（消費者版 REST，支援所有模式）──────────
+router.post('/api/veo/gemini-generate-general', async (req, res) => {
+    try {
+        const payload = req.body
+        const { sourceMode, prompt, aspectRatio, personGeneration, model, numberOfVideos, durationSeconds, negativePrompt, generateAudio, image, referenceImages } = payload
+
+        // 讀取 API Key
+        const settingsFile = join(getDataDir(), 'gemini-settings.json')
+        if (!existsSync(settingsFile)) return res.status(500).json({ ok: false, error: 'Gemini API Key 未設定' })
+        const settings = JSON.parse(readFileSync(settingsFile, 'utf-8'))
+        const apiKey = settings.apiKey || process.env.GEMINI_API_KEY
+        if (!apiKey) return res.status(500).json({ ok: false, error: 'Gemini API Key 未設定' })
+
+        const modelId = model || 'veo-3.1-generate-preview'
+
+        // 組裝 REST body
+        const instance: Record<string, unknown> = {}
+        if (prompt) instance.prompt = prompt
+
+        // image-to-video / frames
+        if ((sourceMode === 'image' || sourceMode === 'frames') && image?.base64Data) {
+            instance.image = {
+                bytesBase64Encoded: image.base64Data.replace(/^data:[^;]+;base64,/, ''),
+                mimeType: image.mimeType || 'image/jpeg',
+            }
+        }
+
+        // reference images
+        if (sourceMode === 'references' && referenceImages?.length) {
+            instance.referenceImages = referenceImages.map((img: { base64Data: string; mimeType: string; referenceType?: string }) => ({
+                image: {
+                    bytesBase64Encoded: img.base64Data.replace(/^data:[^;]+;base64,/, ''),
+                    mimeType: img.mimeType,
+                },
+                referenceType: img.referenceType === 'STYLE' ? 'STYLE_REFERENCE' : 'SUBJECT_REFERENCE',
+            }))
+        }
+
+        const parameters: Record<string, unknown> = {
+            aspectRatio: aspectRatio || '16:9',
+            personGeneration: personGeneration || 'allow_adult',
+            sampleCount: numberOfVideos || 1,
+        }
+        if (durationSeconds) parameters.durationSeconds = durationSeconds
+        if (negativePrompt) parameters.negativePrompt = negativePrompt
+        if (generateAudio !== undefined) parameters.generateAudio = generateAudio
+
+        const body = { instances: [instance], parameters }
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:predictLongRunning?key=${apiKey}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        )
+        const result = await response.json() as { name?: string; error?: { message?: string } }
+
+        if (result.error) {
+            return res.status(500).json({ ok: false, error: result.error.message || JSON.stringify(result.error) })
+        }
+
+        // 建立 job 記錄
+        const { randomUUID } = await import('crypto')
+        const jobId = randomUUID()
+        const now = new Date().toISOString()
+
+        const jobsFile = join(getDataDir(), 'veo-jobs.json')
+        let allJobs: any[] = []
+        try { allJobs = JSON.parse(readFileSync(jobsFile, 'utf-8')) } catch { }
+
+        const job = {
+            id: jobId,
+            status: 'pending',
+            createdAt: now,
+            updatedAt: now,
+            operationName: result.name || '',
+            sourceMode: sourceMode || 'text',
+            prompt: prompt || '',
+            model: modelId,
+            authMode: 'gemini-api',
+            outputs: [],
+            requestSnapshot: payload,
+        }
+        allJobs.unshift(job)
+        writeFileSync(jobsFile, JSON.stringify(allJobs, null, 2), 'utf-8')
+
+        res.json({ ok: true, job })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
 })
 
 // ── Gemini API Subject Video（消費者版 REST）─────────────────────
@@ -224,6 +328,10 @@ router.get('/api/veo/gemini-poll/:jobId', async (req, res) => {
             if (vr?.raiMediaFilteredCount) {
                 job.status = 'failed'
                 job.error = (vr.raiMediaFilteredReasons || ['Content filtered']).join('; ')
+                // AI 分析失敗原因
+                try {
+                    job.failureAnalysis = await analyzePromptFailure(job.prompt || '', job.error)
+                } catch { /* ignore */ }
             } else if (vr?.generatedSamples?.length) {
                 // 下載影片
                 const jobDir = join(getDataDir(), 'generated', 'veo', jobId)
@@ -251,9 +359,15 @@ router.get('/api/veo/gemini-poll/:jobId', async (req, res) => {
             } else if (result.error) {
                 job.status = 'failed'
                 job.error = result.error.message || JSON.stringify(result.error)
+                try {
+                    job.failureAnalysis = await analyzePromptFailure(job.prompt || '', job.error)
+                } catch { /* ignore */ }
             } else {
                 job.status = 'failed'
                 job.error = '未知錯誤：沒有影片輸出'
+                try {
+                    job.failureAnalysis = await analyzePromptFailure(job.prompt || '', job.error)
+                } catch { /* ignore */ }
             }
         } else {
             job.status = 'running'
@@ -367,6 +481,19 @@ router.post('/api/nano/jobs/:id/replace-output', (req, res) => {
         const filePath = join(getDataDir(), output.localPath.replace(/^\/?(generated\/)/, '$1'))
         const raw = base64Data.replace(/^data:[^;]+;base64,/, '')
         writeFileSync(filePath, Buffer.from(raw, 'base64'))
+        res.json({ ok: true })
+    } catch (err: unknown) {
+        res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+})
+
+// Open job folder in Finder
+router.post('/api/nano/jobs/:id/open-folder', (req, res) => {
+    const job = listNanoJobs().find((j: any) => j.id === req.params.id)
+    if (!job) return res.status(404).json({ ok: false, error: 'Job not found' })
+    const folderPath = join(getDataDir(), 'generated', 'nano', req.params.id)
+    try {
+        require('child_process').execSync(`open "${folderPath}"`)
         res.json({ ok: true })
     } catch (err: unknown) {
         res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })

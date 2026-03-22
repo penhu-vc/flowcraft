@@ -26,7 +26,37 @@
             </div>
           </div>
           <p class="history-prompt">{{ job.prompt || '無文字 prompt' }}</p>
-          <p v-if="job.error" class="error-text">{{ job.error }}</p>
+          <!-- 失敗說明 -->
+          <div v-if="job.error" class="failure-block">
+            <p class="error-text">{{ job.error }}</p>
+            <div v-if="job.failureAnalysis" class="failure-analysis">
+              <div class="fa-header">
+                <span class="fa-badge">{{ job.failureAnalysis.reason }}</span>
+              </div>
+              <div class="fa-section">
+                <div class="fa-label">說明</div>
+                <p class="fa-text">{{ job.failureAnalysis.explanation }}</p>
+              </div>
+              <div v-if="job.failureAnalysis.promptIssues?.length" class="fa-section">
+                <div class="fa-label">AI 檢測到的問題</div>
+                <ul class="fa-issues">
+                  <li v-for="(issue, i) in job.failureAnalysis.promptIssues" :key="i">{{ issue }}</li>
+                </ul>
+              </div>
+              <div class="fa-section">
+                <div class="fa-label">修改建議</div>
+                <p class="fa-text">{{ job.failureAnalysis.suggestion }}</p>
+              </div>
+            </div>
+            <button
+              v-else-if="job.status === 'failed'"
+              class="btn btn-secondary btn-sm fa-analyze-btn"
+              :disabled="analyzingJobId === job.id"
+              @click="runAnalysis(job)"
+            >
+              {{ analyzingJobId === job.id ? '🔍 AI 分析中...' : '🔍 AI 分析失敗原因' }}
+            </button>
+          </div>
 
           <div v-if="job.outputs.length > 0" class="video-grid">
             <div v-for="output in job.outputs" :key="`${job.id}-${output.index}`" class="video-card media-card-wrap">
@@ -60,21 +90,39 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { API_BASE_URL } from '../../api/config'
-import type { VeoJob, VeoSourceMode } from '../../api/veo'
+import { analyzeFailure, type VeoJob, type VeoSourceMode } from '../../api/veo'
 
-defineProps<{
+const props = defineProps<{
   jobs: VeoJob[]
   modeLabelMap: Record<VeoSourceMode, string>
   hasAsset: (url: string) => boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'restore', job: VeoJob): void
   (e: 'remove', jobId: string): void
   (e: 'extend', jobId: string, index: number, localUrl?: string): void
   (e: 'collect', url: string, type: 'video'): void
+  (e: 'updateJob', job: VeoJob): void
 }>()
+
+const analyzingJobId = ref<string | null>(null)
+
+async function runAnalysis(job: VeoJob) {
+  if (!job.error || !job.prompt) return
+  analyzingJobId.value = job.id
+  try {
+    const result = await analyzeFailure(job.prompt, job.error)
+    job.failureAnalysis = result.analysis
+    emit('updateJob', job)
+  } catch {
+    // ignore
+  } finally {
+    analyzingJobId.value = null
+  }
+}
 
 function resolveMediaUrl(path: string) {
   return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
@@ -138,6 +186,68 @@ function formatDate(value: string) {
   color: #fda4af;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.failure-block {
+  margin-bottom: 10px;
+}
+
+.failure-analysis {
+  margin-top: 8px;
+  background: rgba(255, 100, 100, 0.06);
+  border: 1px solid rgba(255, 100, 100, 0.15);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.fa-header {
+  margin-bottom: 8px;
+}
+
+.fa-badge {
+  background: rgba(255, 100, 100, 0.2);
+  color: #fda4af;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fa-section {
+  margin-bottom: 8px;
+}
+
+.fa-section:last-child {
+  margin-bottom: 0;
+}
+
+.fa-label {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  font-weight: 600;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fa-text {
+  font-size: 12px;
+  color: var(--text-primary, #ddd);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.fa-issues {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #fbbf24;
+  line-height: 1.8;
+}
+
+.fa-analyze-btn {
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .video-grid {

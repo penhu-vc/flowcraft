@@ -57,6 +57,13 @@ interface StoredVideo {
   mimeType?: string
 }
 
+export interface FailureAnalysis {
+  reason: string
+  explanation: string
+  promptIssues: string[]
+  suggestion: string
+}
+
 export interface VeoJobRecord {
   id: string
   status: JobStatus
@@ -70,6 +77,7 @@ export interface VeoJobRecord {
   metadata?: Record<string, unknown>
   progress?: number
   error?: string
+  failureAnalysis?: FailureAnalysis
   outputs: StoredVideo[]
   requestSnapshot?: VeoGenerationRequest
 }
@@ -434,10 +442,26 @@ export async function refreshVeoJob(jobId: string) {
     if (operation.done) {
       if (operation.error) {
         job.status = 'failed'
-        job.error = JSON.stringify(operation.error)
+        const errorMsg = typeof operation.error === 'string' ? operation.error : JSON.stringify(operation.error)
+        job.error = errorMsg
+        // AI 分析失敗原因（非同步，不阻塞回應）
+        analyzePromptFailure(job.prompt, errorMsg).then(analysis => {
+          job.failureAnalysis = analysis
+          persistJobs()
+        }).catch(() => {})
       } else {
-        job.status = 'completed'
         await hydrateOutputs(client, job, operation)
+        // 偵測靜默 RAI 過濾：done 且無 error 但 outputs 為空
+        if (job.outputs.length === 0) {
+          job.status = 'failed'
+          job.error = '影片被安全過濾器攔截（generatedVideos 為空）。內容可能觸發了 Google 的 Responsible AI 審查機制。'
+          analyzePromptFailure(job.prompt, job.error).then(analysis => {
+            job.failureAnalysis = analysis
+            persistJobs()
+          }).catch(() => {})
+        } else {
+          job.status = 'completed'
+        }
       }
     } else {
       job.status = 'running'
@@ -460,6 +484,142 @@ export function listVeoJobs() {
 
 export function getVeoJob(jobId: string) {
   return jobs.get(jobId)
+}
+
+// ── RAI Failure Analysis ──────────────────────────────────────────
+
+// ── Support Code 對照表（來源：Google Cloud Responsible AI 文件）──
+const SUPPORT_CODE_MAP: Record<string, { category: string; explanation: string }> = {
+  '58061214': { category: '兒童保護', explanation: '偵測到可能涉及兒童的內容。若確定不涉及未成年人，可嘗試調整 personGeneration 設定。' },
+  '17301594': { category: '兒童保護', explanation: '偵測到可能涉及兒童的內容。若確定不涉及未成年人，可嘗試調整 personGeneration 設定。' },
+  '29310472': { category: '名人肖像', explanation: '偵測到嘗試生成知名公眾人物的逼真肖像。Veo 禁止生成可辨識的名人影片，需要 Google 專案級白名單才能解鎖。' },
+  '15236754': { category: '名人肖像', explanation: '偵測到嘗試生成知名公眾人物的逼真肖像。Veo 禁止生成可辨識的名人影片，需要 Google 專案級白名單才能解鎖。' },
+  '64151117': { category: '影片安全違規', explanation: '影片內容觸發了一般安全違規檢查。' },
+  '42237218': { category: '影片安全違規', explanation: '影片內容觸發了一般安全違規檢查。' },
+  '90789179': { category: '性/暗示內容', explanation: '偵測到性暗示或不當的成人內容。' },
+  '43188360': { category: '性/暗示內容', explanation: '偵測到性暗示或不當的成人內容。' },
+  '61493863': { category: '暴力內容', explanation: '偵測到暴力或血腥相關描述。' },
+  '56562880': { category: '暴力內容', explanation: '偵測到暴力或血腥相關描述。' },
+  '62263041': { category: '危險內容', explanation: '偵測到可能有害的危險內容描述。' },
+  '57734940': { category: '仇恨內容', explanation: '偵測到仇恨或歧視性相關內容。' },
+  '22137204': { category: '仇恨內容', explanation: '偵測到仇恨或歧視性相關內容。' },
+  '78610348': { category: '有毒內容', explanation: '偵測到有害或有毒行為描述。' },
+  '32635315': { category: '粗俗內容', explanation: '偵測到粗俗或不雅的語言/畫面描述。' },
+  '92201652': { category: '個資洩露', explanation: '偵測到可能包含個人識別資訊（如信用卡、地址等）。' },
+  '35561574': { category: '第三方版權', explanation: '偵測到受版權保護的第三方內容（如動漫角色、品牌 Logo 等）。' },
+  '35561575': { category: '第三方版權', explanation: '偵測到受版權保護的第三方內容（如動漫角色、品牌 Logo 等）。' },
+  '89371032': { category: '禁止內容', explanation: '觸發了嚴格的內容安全政策。' },
+  '49114662': { category: '禁止內容', explanation: '觸發了嚴格的內容安全政策。' },
+  '63429089': { category: '禁止內容', explanation: '觸發了嚴格的內容安全政策。' },
+  '72817394': { category: '禁止內容', explanation: '觸發了嚴格的內容安全政策。' },
+  '60599140': { category: '禁止內容', explanation: '觸發了嚴格的內容安全政策。' },
+  '74803281': { category: '其他安全問題', explanation: '觸發了未分類的安全過濾機制。' },
+  '29578790': { category: '其他安全問題', explanation: '觸發了未分類的安全過濾機制。' },
+  '42876398': { category: '其他安全問題', explanation: '觸發了未分類的安全過濾機制。' },
+}
+
+function parseSupportCodes(errorStr: string): { category: string; explanation: string } | null {
+  const codeMatch = errorStr.match(/Support codes?:\s*([\d,\s]+)/i)
+  if (!codeMatch) return null
+  const codes = codeMatch[1].split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+  for (const code of codes) {
+    if (SUPPORT_CODE_MAP[code]) return SUPPORT_CODE_MAP[code]
+  }
+  return null
+}
+
+const RAI_REASON_MAP: Record<string, { label: string; explanation: string }> = {
+  'people/face': {
+    label: '人物/臉部安全過濾',
+    explanation: '影片因為人物或臉部生成的安全設定而被過濾。可能的原因：參考圖中的人物年齡模糊、人臉生成設定限制、或 prompt 中的人物描述觸發了安全機制。',
+  },
+  'audio': {
+    label: '音訊安全過濾',
+    explanation: '影片的音訊部分被安全過濾器攔截。這在 Veo 3.1 中是已知的誤判問題，通常重試即可。建議：相同 prompt 再試 2-3 次。',
+  },
+  'input image': {
+    label: '輸入圖片違規',
+    explanation: '你上傳的參考圖片被判定違反使用規範。可能的原因：圖片中有敏感內容、模糊的年齡判定、或過於裸露的服裝。',
+  },
+  'usage guidelines': {
+    label: '使用規範違規',
+    explanation: '內容被判定違反 Google 生成式 AI 使用政策。可能涉及：暴力、色情、仇恨言論、真實人物肖像權等。',
+  },
+}
+
+function parseRaiReason(errorStr: string): { label: string; explanation: string } | null {
+  // 優先解析 support code（最精確）
+  const supportCodeInfo = parseSupportCodes(errorStr)
+  if (supportCodeInfo) {
+    return { label: supportCodeInfo.category, explanation: supportCodeInfo.explanation }
+  }
+
+  const lower = errorStr.toLowerCase()
+  for (const [keyword, info] of Object.entries(RAI_REASON_MAP)) {
+    if (lower.includes(keyword)) return info
+  }
+  if (lower.includes('filter') || lower.includes('rai') || lower.includes('safety') || lower.includes('blocked')) {
+    return { label: '內容安全過濾', explanation: '影片被 Google 的安全機制過濾，但未提供具體原因。建議檢查 prompt 是否有敏感詞彙。' }
+  }
+  return null
+}
+
+export async function analyzePromptFailure(prompt: string, errorStr: string): Promise<FailureAnalysis> {
+  const raiInfo = parseRaiReason(errorStr)
+  const reason = raiInfo?.label || '生成失敗'
+  const explanation = raiInfo?.explanation || errorStr
+
+  // 嘗試用 Gemini 分析 prompt 問題
+  try {
+    const { executeGemini } = await import('../executors/gemini')
+    const analysisResult = await executeGemini({
+      prompt: `你是 Google Veo 影片生成的審查專家。以下的影片生成 prompt 被安全過濾器攔截了。
+
+錯誤訊息：${errorStr}
+
+使用者的 prompt：
+"""
+${prompt}
+"""
+
+請分析這個 prompt 可能觸發安全過濾的原因，並提供修改建議。回覆格式必須是 JSON：
+{
+  "issues": ["問題1", "問題2"],
+  "suggestion": "修改建議"
+}
+
+常見觸發原因：
+1. 描述真實名人或公眾人物的肖像
+2. 涉及未成年人的描述
+3. 暴力、血腥或武器相關描述
+4. 性暗示或裸露相關描述
+5. 描述受版權保護的角色（迪士尼、漫威等）
+6. 過於激烈的動作描述（打鬥、碰撞等）
+7. 音訊相關：對話內容涉及敏感話題
+8. 人種/民族的刻板描述
+
+回覆純 JSON，不要 markdown。`,
+      model: 'gemini-2.5-flash',
+      temperature: 0,
+      maxTokens: 1024,
+    }, () => {})
+
+    try {
+      const resultText = typeof analysisResult === 'string' ? analysisResult : analysisResult.result
+      const cleaned = resultText.replace(/```json\n?|\n?```/g, '').trim()
+      const parsed = JSON.parse(cleaned)
+      return {
+        reason,
+        explanation,
+        promptIssues: parsed.issues || [],
+        suggestion: parsed.suggestion || '嘗試移除敏感描述後重新生成。',
+      }
+    } catch {
+      return { reason, explanation, promptIssues: [], suggestion: '嘗試簡化 prompt，移除可能的敏感描述後重新生成。' }
+    }
+  } catch {
+    return { reason, explanation, promptIssues: [], suggestion: '嘗試簡化 prompt，移除可能的敏感描述後重新生成。' }
+  }
 }
 
 export function deleteVeoJob(jobId: string) {

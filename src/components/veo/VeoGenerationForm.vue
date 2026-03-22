@@ -218,9 +218,14 @@
         <p class="hint">
           {{ submitHint }}
         </p>
-        <button class="btn btn-primary" :disabled="submitting || !configured" @click="$emit('submit')">
-          {{ submitting ? '送出中...' : '開始生成' }}
-        </button>
+        <div class="submit-buttons">
+          <button class="btn btn-primary" :disabled="submitting || !configured" @click="$emit('submit', 'vertex')">
+            {{ submitting ? '送出中...' : '🔷 Vertex AI 生成' }}
+          </button>
+          <button class="btn btn-gemini" :disabled="submitting || !hasApiKey" @click="$emit('submit', 'gemini')">
+            {{ submitting ? '送出中...' : '🔶 Gemini API 生成' }}
+          </button>
+        </div>
       </div>
 
       <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
@@ -281,6 +286,7 @@ const props = defineProps<{
   completedVideoOptions: CompletedVideoOption[]
   canAddRef: boolean
   optimizing: boolean
+  hasApiKey: boolean
 }>()
 
 defineEmits<{
@@ -302,7 +308,7 @@ defineEmits<{
   'optimize-refs': [combined: string]
   'update-descriptions': [descriptions: string[]]
   'apply-existing-video': [value: string]
-  'submit': []
+  'submit': [backend: 'vertex' | 'gemini']
 }>()
 
 const needsPrompt = computed(() => props.form.sourceMode !== 'image')
@@ -481,6 +487,31 @@ defineExpose({
 .constraint-hint {
   color: #fbbf24;
   margin-top: -4px;
+}
+
+.submit-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-gemini {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #000;
+  border: none;
+  padding: 10px 18px;
+  border-radius: var(--radius-md, 8px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-gemini:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.btn-gemini:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .error-text {

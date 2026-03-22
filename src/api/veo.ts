@@ -58,6 +58,13 @@ export interface VeoOutput {
   mimeType?: string
 }
 
+export interface FailureAnalysis {
+  reason: string
+  explanation: string
+  promptIssues: string[]
+  suggestion: string
+}
+
 export interface VeoJob {
   id: string
   status: 'pending' | 'running' | 'completed' | 'failed'
@@ -71,6 +78,7 @@ export interface VeoJob {
   metadata?: Record<string, unknown>
   progress?: number
   error?: string
+  failureAnalysis?: FailureAnalysis
   outputs: VeoOutput[]
   requestSnapshot?: VeoGenerationPayload
 }
@@ -107,9 +115,29 @@ export async function createVeoJob(payload: VeoGenerationPayload) {
   return parse<{ ok: true; job: VeoJob }>(res)
 }
 
+export async function createVeoJobGemini(payload: VeoGenerationPayload) {
+  const res = await fetch(API_ENDPOINTS.veoGeminiGenerateGeneral, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parse<{ ok: true; job: VeoJob }>(res)
+}
+
 export async function deleteVeoJob(jobId: string) {
   const res = await fetch(`${API_ENDPOINTS.veoJobs}/${jobId}`, { method: 'DELETE' })
   return parse<{ ok: true }>(res)
+}
+
+// ── Failure Analysis API ──────────────────────────────────────────
+
+export async function analyzeFailure(prompt: string, error: string) {
+  const res = await fetch(`${API_ENDPOINTS.veoJobs.replace('/jobs', '/analyze-failure')}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, error }),
+  })
+  return parse<{ ok: true; analysis: FailureAnalysis }>(res)
 }
 
 // ── Gemini Subject Video API ──────────────────────────────────────
