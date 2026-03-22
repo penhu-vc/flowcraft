@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import express from 'express'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
-import { getDataDir, ensureDir } from '../dataDir'
+import { execFile } from 'child_process'
+import { getDataDir, ensureDir, LOCAL_DATA_DIR } from '../dataDir'
 
 import { createVeoJob, deleteVeoJob, getVeoStatus, listVeoJobs, refreshVeoJob } from '../services/veo'
 import { analyzeSceneSubjects, createNanoJob, deleteNanoJob, describeImage, getNanoStatus, listNanoJobs } from '../services/nano'
@@ -17,10 +18,19 @@ const getGeneratedFilesDir = () => ensureDir('generated')
 const getAssetsDir = () => ensureDir('generated', 'assets')
 const getAssetsIndexFile = () => join(getDataDir(), 'assets-index.json')
 
-// ── Serve static generated files ──────────────────────────────────
-// 啟動時初始化路徑，切換 NAS 後需要重啟 server 才能從新位置提供靜態檔案
-const GENERATED_FILES_DIR = ensureDir('generated')
-router.use('/generated', express.static(GENERATED_FILES_DIR))
+// ── Serve static generated files（動態解析，支援 NAS 切換不需重啟）──
+router.use('/generated', (req, res, next) => {
+    const filePath = join(getDataDir(), 'generated', req.path)
+    if (existsSync(filePath)) {
+        return res.sendFile(filePath)
+    }
+    // fallback: 如果 NAS 模式找不到，嘗試本地
+    const localPath = join(LOCAL_DATA_DIR, 'generated', req.path)
+    if (localPath !== filePath && existsSync(localPath)) {
+        return res.sendFile(localPath)
+    }
+    res.status(404).json({ error: 'File not found' })
+})
 
 // ── Assets index helpers ──────────────────────────────────────────
 interface AssetIndexEntry {
@@ -95,6 +105,183 @@ router.delete('/api/veo/jobs/:id', (req, res) => {
         return res.status(404).json({ ok: false, error: 'Job not found' })
     }
     res.json({ ok: true })
+})
+
+// ── Gemini API Subject Video（消費者版 REST）─────────────────────
+router.post('/api/veo/gemini-generate', async (req, res) => {
+    try {
+        const { referenceImages, prompt, aspectRatio, personGeneration } = req.body
+        if (!prompt) return res.status(400).json({ ok: false, error: 'prompt is required' })
+        if (!referenceImages?.length) return res.status(400).json({ ok: false, error: 'referenceImages is required' })
+
+        // 讀取 API Key
+        const settingsFile = join(getDataDir(), 'gemini-settings.json')
+        if (!existsSync(settingsFile)) return res.status(500).json({ ok: false, error: 'Gemini API Key 未設定' })
+        const settings = JSON.parse(readFileSync(settingsFile, 'utf-8'))
+        const apiKey = settings.apiKey || process.env.GEMINI_API_KEY
+        if (!apiKey) return res.status(500).json({ ok: false, error: 'Gemini API Key 未設定' })
+
+        // 組裝 REST body（每張圖可指定 referenceType）
+        const refs = referenceImages.map((img: { base64Data: string; mimeType: string; referenceType?: string }) => ({
+            image: {
+                bytesBase64Encoded: img.base64Data.replace(/^data:[^;]+;base64,/, ''),
+                mimeType: img.mimeType,
+            },
+            referenceType: img.referenceType || 'subject',
+        }))
+
+        const body = {
+            instances: [{
+                prompt,
+                referenceImages: refs,
+            }],
+            parameters: {
+                aspectRatio: aspectRatio || '9:16',
+                personGeneration: personGeneration || 'allow_adult',
+                sampleCount: 1,
+            },
+        }
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning?key=${apiKey}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        )
+        const result = await response.json() as { name?: string; error?: { message?: string } }
+
+        if (result.error) {
+            return res.status(500).json({ ok: false, error: result.error.message || JSON.stringify(result.error) })
+        }
+
+        // 建立 job 記錄
+        const { randomUUID } = await import('crypto')
+        const jobId = randomUUID()
+        const now = new Date().toISOString()
+        const operationName = result.name || ''
+
+        // 讀寫 veo-jobs.json
+        const jobsFile = join(getDataDir(), 'veo-jobs.json')
+        let allJobs: any[] = []
+        try { allJobs = JSON.parse(readFileSync(jobsFile, 'utf-8')) } catch { }
+
+        const job = {
+            id: jobId,
+            status: 'pending',
+            createdAt: now,
+            updatedAt: now,
+            operationName,
+            sourceMode: 'references',
+            prompt,
+            model: 'veo-3.1-generate-preview',
+            authMode: 'gemini-api',
+            outputs: [],
+            requestSnapshot: { sourceMode: 'references', prompt, aspectRatio, referenceImages: [] },
+        }
+        allJobs.unshift(job)
+        writeFileSync(jobsFile, JSON.stringify(allJobs, null, 2), 'utf-8')
+
+        res.json({ ok: true, job: { ...job, operationName } })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+router.get('/api/veo/gemini-poll/:jobId', async (req, res) => {
+    try {
+        const { jobId } = req.params
+
+        // 從 veo-jobs.json 找 job
+        const jobsFile = join(getDataDir(), 'veo-jobs.json')
+        let allJobs: any[] = []
+        try { allJobs = JSON.parse(readFileSync(jobsFile, 'utf-8')) } catch { }
+        const job = allJobs.find((j: any) => j.id === jobId)
+        if (!job) return res.status(404).json({ ok: false, error: 'Job not found' })
+        if (job.status === 'completed' || job.status === 'failed') return res.json({ ok: true, job })
+
+        const settingsFile = join(getDataDir(), 'gemini-settings.json')
+        const settings = JSON.parse(readFileSync(settingsFile, 'utf-8'))
+        const apiKey = settings.apiKey || process.env.GEMINI_API_KEY
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/${job.operationName}?key=${apiKey}`
+        )
+        const result = await response.json() as {
+            done?: boolean
+            response?: {
+                generateVideoResponse?: {
+                    generatedSamples?: Array<{ video?: { uri?: string } }>
+                    raiMediaFilteredCount?: number
+                    raiMediaFilteredReasons?: string[]
+                }
+            }
+            error?: { message?: string }
+        }
+
+        job.updatedAt = new Date().toISOString()
+
+        if (result.done) {
+            const vr = result.response?.generateVideoResponse
+            if (vr?.raiMediaFilteredCount) {
+                job.status = 'failed'
+                job.error = (vr.raiMediaFilteredReasons || ['Content filtered']).join('; ')
+            } else if (vr?.generatedSamples?.length) {
+                // 下載影片
+                const jobDir = join(getDataDir(), 'generated', 'veo', jobId)
+                mkdirSync(jobDir, { recursive: true })
+                const outputs: any[] = []
+
+                for (const [idx, sample] of vr.generatedSamples.entries()) {
+                    if (sample.video?.uri) {
+                        const videoUrl = `${sample.video.uri}&key=${apiKey}`
+                        const videoRes = await fetch(videoUrl)
+                        const buffer = Buffer.from(await videoRes.arrayBuffer())
+                        const fileName = `video-${idx + 1}.mp4`
+                        const outputPath = join(jobDir, fileName)
+                        writeFileSync(outputPath, buffer)
+                        outputs.push({
+                            index: idx,
+                            localPath: outputPath,
+                            localUrl: `/generated/veo/${jobId}/${fileName}`,
+                            mimeType: 'video/mp4',
+                        })
+                    }
+                }
+                job.status = 'completed'
+                job.outputs = outputs
+            } else if (result.error) {
+                job.status = 'failed'
+                job.error = result.error.message || JSON.stringify(result.error)
+            } else {
+                job.status = 'failed'
+                job.error = '未知錯誤：沒有影片輸出'
+            }
+        } else {
+            job.status = 'running'
+        }
+
+        writeFileSync(jobsFile, JSON.stringify(allJobs, null, 2), 'utf-8')
+        res.json({ ok: true, job })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+router.post('/api/veo/describe-for-video', async (req, res) => {
+    try {
+        const { image } = req.body
+        if (!image?.base64Data) return res.status(400).json({ ok: false, error: 'image is required' })
+
+        // 用 nano 的 describeImage 功能（已有 Gemini 整合）
+        const result = await describeImage(image, [
+            'appearance', 'clothing', 'hair', 'expression', 'pose',
+            'background', 'lighting', 'composition', 'color',
+        ])
+        res.json({ ok: true, description: result })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
 })
 
 // ── Nano routes ───────────────────────────────────────────────────
@@ -234,6 +421,55 @@ router.put('/api/assets/index', (req, res) => {
         }
         saveAssetsIndex(items)
         res.json({ ok: true })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        res.status(500).json({ ok: false, error: message })
+    }
+})
+
+// ── YouTube download (yt-dlp) ────────────────────────────────────
+const getYtCacheDir = () => ensureDir('generated', 'yt-cache')
+
+router.post('/api/youtube/download', async (req, res) => {
+    try {
+        const { url } = req.body
+        if (!url || typeof url !== 'string') {
+            return res.status(400).json({ ok: false, error: 'url is required' })
+        }
+        // Validate YouTube URL
+        const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)
+        if (!ytMatch) {
+            return res.status(400).json({ ok: false, error: '不是有效的 YouTube 連結' })
+        }
+        const videoId = ytMatch[1]
+        const cacheDir = getYtCacheDir()
+        const outPath = join(cacheDir, `${videoId}.mp4`)
+
+        // Return cached if exists
+        if (existsSync(outPath) && statSync(outPath).size > 0) {
+            return res.json({ ok: true, url: `/generated/yt-cache/${videoId}.mp4`, videoId, cached: true })
+        }
+
+        // Download with yt-dlp (best quality ≤720p with audio, mp4)
+        await new Promise<void>((resolve, reject) => {
+            execFile('yt-dlp', [
+                '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
+                '--merge-output-format', 'mp4',
+                '-o', outPath,
+                '--no-playlist',
+                '--no-check-certificates',
+                url,
+            ], { timeout: 120_000 }, (err, _stdout, stderr) => {
+                if (err) reject(new Error(stderr || err.message))
+                else resolve()
+            })
+        })
+
+        if (!existsSync(outPath) || statSync(outPath).size === 0) {
+            return res.status(500).json({ ok: false, error: '下載失敗，檔案為空' })
+        }
+
+        res.json({ ok: true, url: `/generated/yt-cache/${videoId}.mp4`, videoId, cached: false })
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
         res.status(500).json({ ok: false, error: message })

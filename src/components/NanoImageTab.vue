@@ -66,24 +66,46 @@
             <span>🤖 AI Re-harmonize</span>
             <button class="rh-close" @click="showReharmonizeModal = false">&times;</button>
           </div>
+          <div class="rh-tabs">
+            <button class="rh-tab" :class="{ active: rhTab === 'person' }" @click="rhTab = 'person'">👤 人</button>
+            <button class="rh-tab" :class="{ active: rhTab === 'scene' }" @click="rhTab = 'scene'">🏞️ 景</button>
+          </div>
           <div class="rh-modal-body">
             <div class="rh-preview">
               <img :src="reharmonizeUrl" class="rh-preview-img" />
             </div>
-            <div class="rh-field">
-              <label>人種</label>
-              <select v-model="reharmonizeEthnicity" class="form-input form-input-sm">
-                <option value="Asian">亞洲人</option>
-                <option value="Caucasian">歐美人</option>
-                <option value="African">非裔</option>
-                <option value="Latino">拉丁裔</option>
-                <option value="Middle Eastern">中東</option>
-              </select>
-            </div>
-            <div class="rh-field">
-              <label>年齡</label>
-              <input type="number" v-model.number="reharmonizeAge" min="1" max="100" class="form-input form-input-sm" />
-            </div>
+            <!-- 人 tab -->
+            <template v-if="rhTab === 'person'">
+              <div class="rh-field">
+                <label>人種</label>
+                <select v-model="reharmonizeEthnicity" class="form-input form-input-sm">
+                  <option value="Asian">亞洲人</option>
+                  <option value="Caucasian">歐美人</option>
+                  <option value="African">非裔</option>
+                  <option value="Latino">拉丁裔</option>
+                  <option value="Middle Eastern">中東</option>
+                </select>
+              </div>
+              <div class="rh-field">
+                <label>年齡</label>
+                <input type="number" v-model.number="reharmonizeAge" min="1" max="100" class="form-input form-input-sm" />
+              </div>
+            </template>
+            <!-- 景 tab -->
+            <template v-if="rhTab === 'scene'">
+              <div class="rh-field">
+                <label>場景風格</label>
+                <select v-model="rhSceneStyle" class="form-input form-input-sm">
+                  <option value="lived-in">🏠 一般使用（自然生活感）</option>
+                  <option value="abandoned">🏚️ 荒廢已久（廢墟感）</option>
+                </select>
+              </div>
+              <div class="rh-scene-desc">
+                {{ rhSceneStyle === 'lived-in'
+                  ? '讓背景看起來更真實、有生活痕跡，去除過於完美的 AI 感。'
+                  : '讓場景呈現年久失修、荒廢已久的狀態，增加破損、灰塵、植物入侵等細節。' }}
+              </div>
+            </template>
           </div>
           <div class="rh-modal-footer">
             <button class="btn btn-secondary btn-sm" @click="showReharmonizeModal = false" :disabled="reharmonizeLoading">取消</button>
@@ -757,11 +779,15 @@ const reharmonizeUrl = ref('')
 const reharmonizeEthnicity = ref('Asian')
 const reharmonizeAge = ref(20)
 const reharmonizeLoading = ref(false)
+const rhTab = ref<'person' | 'scene'>('person')
+const rhSceneStyle = ref<'lived-in' | 'abandoned'>('lived-in')
 
 function onAiReharmonize(localUrl: string) {
   reharmonizeUrl.value = resolveMediaUrl(localUrl)
   reharmonizeEthnicity.value = 'Asian'
   reharmonizeAge.value = 20
+  rhTab.value = 'person'
+  rhSceneStyle.value = 'lived-in'
   showReharmonizeModal.value = true
 }
 
@@ -791,10 +817,18 @@ async function confirmReharmonize() {
       ? Object.entries(descData.description).map(([k, v]) => `${k}: ${v}`).join('. ')
       : ''
 
-    // Step 3: Build prompt
-    const ethnicityAge = `A ${reharmonizeAge.value}-year-old ${reharmonizeEthnicity.value} person.`
-    const reharmonizeInstruction = `Re-harmonize the entire image so the subject and environment become one coherent, naturally captured photograph. Match the subject's lighting, color temperature, contrast, edge softness, shadow behavior, and atmospheric depth to the surrounding scene. Strengthen physically plausible directional light from the main scene light source, and add realistic shadow transitions on the face, neck, hair, and clothing. Add subtle ambient bounce light and environmental color spill from nearby surfaces and objects. Remove any cutout, pasted, sticker-like, or composited appearance. Ensure the final result looks fully integrated, spatially believable, and photographically consistent, with realistic edges, natural tonal depth, and scene-matched lighting across the entire image.`
-    const fullPrompt = `${ethnicityAge} ${sceneDesc} ${reharmonizeInstruction}`
+    // Step 3: Build prompt based on tab
+    let fullPrompt: string
+    if (rhTab.value === 'person') {
+      const ethnicityAge = `A ${reharmonizeAge.value}-year-old ${reharmonizeEthnicity.value} person.`
+      const reharmonizeInstruction = `Re-harmonize the entire image so the subject and environment become one coherent, naturally captured photograph. Match the subject's lighting, color temperature, contrast, edge softness, shadow behavior, and atmospheric depth to the surrounding scene. Strengthen physically plausible directional light from the main scene light source, and add realistic shadow transitions on the face, neck, hair, and clothing. Add subtle ambient bounce light and environmental color spill from nearby surfaces and objects. Remove any cutout, pasted, sticker-like, or composited appearance. Ensure the final result looks fully integrated, spatially believable, and photographically consistent, with realistic edges, natural tonal depth, and scene-matched lighting across the entire image.`
+      fullPrompt = `${ethnicityAge} ${sceneDesc} ${reharmonizeInstruction}`
+    } else {
+      const sceneInstruction = rhSceneStyle.value === 'lived-in'
+        ? `Make the background feel less perfect, less staged, and more naturally lived-in. Add subtle real-world irregularities: slight asymmetry in furniture placement, minor scuffs and wear marks on surfaces, gentle everyday clutter like a half-read book or a used coffee mug, natural texture variation on walls and floors, and believable depth falloff with softer focus toward background edges. Introduce warm, uneven ambient lighting with subtle light spill from windows or lamps. Avoid showroom perfection, postcard-like scenery, sterile cleanliness, and CGI-like polish. The scene should feel like someone actually lives or works here.`
+        : `Transform the background into a convincingly abandoned, long-neglected space. Add visible signs of decay and time passage: cracked and peeling paint or plaster, dust and cobwebs on surfaces, broken or boarded-up windows with light filtering through gaps, overgrown vegetation creeping through cracks in floors and walls, scattered debris and fallen ceiling tiles, rust stains on metal fixtures, faded and water-damaged surfaces, and uneven natural lighting from partial structural collapse. The atmosphere should feel eerily still, with a sense that this place has been untouched for years.`
+      fullPrompt = `${sceneDesc} ${sceneInstruction}`
+    }
 
     // Step 4: Submit edit job
     const payload: NanoGenerationPayload = {
@@ -972,6 +1006,34 @@ onBeforeUnmount(stopPolling)
   width: 380px;
   max-width: 92vw;
   overflow: hidden;
+}
+.rh-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border, #333);
+}
+.rh-tab {
+  flex: 1;
+  padding: 10px;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+.rh-tab:hover { color: var(--text-primary, #fff); }
+.rh-tab.active {
+  color: var(--text-primary, #fff);
+  border-bottom-color: var(--primary, #7c3aed);
+}
+.rh-scene-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
 }
 .rh-modal-header {
   display: flex;

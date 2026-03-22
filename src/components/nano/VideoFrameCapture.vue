@@ -9,13 +9,33 @@
     </div>
 
     <!-- Upload area: video mode -->
-    <label v-if="mode === 'video' && !videoSrc" class="vfc-upload-zone"
-      @dragover.prevent @drop.prevent="onZoneDrop">
-      <input type="file" accept="video/*" hidden @change="onVideoUpload" />
-      <span class="vfc-upload-icon">📹</span>
-      <span class="vfc-upload-text">上傳影片</span>
-      <span class="vfc-upload-hint">MP4, WebM, MOV · 或從素材囊拖曳</span>
-    </label>
+    <div v-if="mode === 'video' && !videoSrc" class="vfc-source-area">
+      <div class="vfc-source-tabs">
+        <button class="vfc-source-tab" :class="{ active: videoSourceTab === 'file' }" @click="videoSourceTab = 'file'">📁 本機檔案</button>
+        <button class="vfc-source-tab" :class="{ active: videoSourceTab === 'youtube' }" @click="videoSourceTab = 'youtube'">▶ YouTube</button>
+      </div>
+      <label v-if="videoSourceTab === 'file'" class="vfc-upload-zone"
+        @dragover.prevent @drop.prevent="onZoneDrop">
+        <input type="file" accept="video/*" hidden @change="onVideoUpload" />
+        <span class="vfc-upload-icon">📹</span>
+        <span class="vfc-upload-text">上傳影片</span>
+        <span class="vfc-upload-hint">MP4, WebM, MOV · 或從素材囊拖曳</span>
+      </label>
+      <div v-if="videoSourceTab === 'youtube'" class="vfc-yt-input-area">
+        <div class="vfc-yt-row">
+          <input v-model="ytUrl" type="text" class="vfc-yt-input" placeholder="貼上 YouTube 連結..." @keydown.enter="downloadYouTube" />
+          <button class="btn btn-primary btn-sm" :disabled="ytLoading || !ytUrl.trim()" @click="downloadYouTube">
+            {{ ytLoading ? '下載中...' : '載入' }}
+          </button>
+        </div>
+        <div v-if="ytLoading" class="vfc-yt-progress">
+          <div class="vfc-yt-spinner"></div>
+          <span>正在從 YouTube 下載影片，請稍候...</span>
+        </div>
+        <div v-if="ytError" class="vfc-yt-error">{{ ytError }}</div>
+        <span class="vfc-upload-hint">支援 youtube.com/watch、youtu.be、youtube.com/shorts</span>
+      </div>
+    </div>
 
     <!-- Upload area: image mode -->
     <label v-if="mode === 'image' && !imageSrc" class="vfc-upload-zone"
@@ -117,6 +137,12 @@ const fps = ref(30)
 const currentFrame = computed(() => Math.floor(currentTime.value * fps.value))
 const captureCount = ref(0)
 
+// YouTube
+const videoSourceTab = ref<'file' | 'youtube'>('file')
+const ytUrl = ref('')
+const ytLoading = ref(false)
+const ytError = ref('')
+
 const cropEnabled = ref(false)
 const cropRatio = ref('free')
 const cropBox = ref({ x: 0, y: 0, w: 0, h: 0 })
@@ -142,11 +168,35 @@ const ratioPresets = [
 let resizeObserver: ResizeObserver | null = null
 
 function resetMedia() {
-  if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
+  if (videoSrc.value && videoSrc.value.startsWith('blob:')) URL.revokeObjectURL(videoSrc.value)
   videoSrc.value = ''
   imageSrc.value = ''
   captureCount.value = 0
   cropEnabled.value = false
+  ytError.value = ''
+}
+
+async function downloadYouTube() {
+  const url = ytUrl.value.trim()
+  if (!url) return
+  ytLoading.value = true
+  ytError.value = ''
+  try {
+    const resp = await fetch('/api/youtube/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+    const data = await resp.json()
+    if (!data.ok) throw new Error(data.error || '下載失敗')
+    if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
+    videoSrc.value = data.url
+    captureCount.value = 0
+  } catch (err: any) {
+    ytError.value = err.message || '下載失敗'
+  } finally {
+    ytLoading.value = false
+  }
 }
 
 function onImageUpload(e: Event) {
@@ -572,7 +622,7 @@ async function capturePortrait() {
 }
 
 onBeforeUnmount(() => {
-  if (videoSrc.value) URL.revokeObjectURL(videoSrc.value)
+  if (videoSrc.value && videoSrc.value.startsWith('blob:')) URL.revokeObjectURL(videoSrc.value)
   resizeObserver?.disconnect()
 })
 </script>
@@ -800,6 +850,77 @@ onBeforeUnmount(() => {
 .vfc-capture-count {
   font-size: 12px;
   color: var(--text-muted, #888);
+}
+
+/* Source tabs */
+.vfc-source-area {
+  padding: 0;
+}
+.vfc-source-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+.vfc-source-tab {
+  flex: 1;
+  padding: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+.vfc-source-tab:hover { color: var(--text-primary, #fff); }
+.vfc-source-tab.active {
+  color: var(--text-primary, #fff);
+  border-bottom-color: var(--primary, #7c3aed);
+}
+
+/* YouTube input */
+.vfc-yt-input-area {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.vfc-yt-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.vfc-yt-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-tertiary, #252540);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  color: var(--text-primary, #fff);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.vfc-yt-input:focus { border-color: var(--primary, #7c3aed); }
+.vfc-yt-input::placeholder { color: var(--text-muted, #666); }
+.vfc-yt-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+.vfc-yt-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border-color, #444);
+  border-top-color: var(--primary, #7c3aed);
+  border-radius: 50%;
+  animation: vfc-spin 0.8s linear infinite;
+}
+@keyframes vfc-spin { to { transform: rotate(360deg); } }
+.vfc-yt-error {
+  font-size: 12px;
+  color: #f87171;
 }
 
 .vfc-btn-change {

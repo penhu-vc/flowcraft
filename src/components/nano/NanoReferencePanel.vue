@@ -16,10 +16,17 @@
           告訴模型「要這種視覺感覺」<br/>
           例：水彩風、賽博龐克、油畫風格<br/><br/>
           <strong>🕹️ Control（進階控制）</strong><br/>
-          用結構圖控制構圖和姿勢<br/>
-          · Canny Edge — 邊緣線稿<br/>
-          · Scribble — 手繪草圖<br/>
-          · Face Mesh — 臉部網格
+          用結構圖控制構圖和姿勢<br/><br/>
+          <strong>Canny Edge（邊緣線稿）</strong><br/>
+          · 從照片自動提取精確的邊緣輪廓線<br/>
+          · 像是用演算法描出物體的輪廓，線條很精準<br/>
+          · 適合：保持原圖構圖和物體形狀，但換風格/材質<br/><br/>
+          <strong>Scribble（手繪草圖）</strong><br/>
+          · 接受粗略的手畫線條，容忍度高<br/>
+          · 線條可以很潦草，模型會自行補完細節<br/>
+          · 適合：從草稿概念快速生成完整圖像<br/><br/>
+          <strong>Face Mesh（臉部網格）</strong><br/>
+          · 用臉部 3D 網格控制表情和角度
         </span>
       </span>
     </div>
@@ -447,8 +454,10 @@ async function onRefDropAsset(e: DragEvent, _slotIndex: number) {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 300px;
+  width: 360px;
   padding: 12px 14px;
+  max-height: 500px;
+  overflow-y: auto;
   background: var(--bg-surface, var(--c-surface));
   border: 1px solid var(--border, var(--c-border));
   border-radius: 8px;
