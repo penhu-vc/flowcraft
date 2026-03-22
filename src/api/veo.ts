@@ -111,3 +111,35 @@ export async function deleteVeoJob(jobId: string) {
   const res = await fetch(`${API_ENDPOINTS.veoJobs}/${jobId}`, { method: 'DELETE' })
   return parse<{ ok: true }>(res)
 }
+
+// ── Gemini Subject Video API ──────────────────────────────────────
+
+export interface GeminiSubjectPayload {
+  referenceImages: Array<{ base64Data: string; mimeType: string; referenceType?: 'subject' | 'style' }>
+  prompt: string
+  aspectRatio?: '9:16' | '16:9'
+  personGeneration?: 'dont_allow' | 'allow_adult'
+}
+
+export async function geminiGenerate(payload: GeminiSubjectPayload) {
+  const res = await fetch(API_ENDPOINTS.veoGeminiGenerate, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parse<{ ok: true; job: VeoJob }>(res)
+}
+
+export async function geminiPoll(jobId: string) {
+  const res = await fetch(`${API_ENDPOINTS.veoGeminiPoll}/${jobId}`)
+  return parse<{ ok: true; job: VeoJob }>(res)
+}
+
+export async function describeForVideo(image: { base64Data: string; mimeType: string }) {
+  const res = await fetch(API_ENDPOINTS.veoDescribeForVideo, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image }),
+  })
+  return parse<{ ok: true; description: string }>(res)
+}

@@ -28,6 +28,13 @@
       </button>
       <button
         class="studio-tab"
+        :class="{ active: activeTab === 'subject' }"
+        @click="activeTab = 'subject'"
+      >
+        🎭 角色影片
+      </button>
+      <button
+        class="studio-tab"
         :class="{ active: activeTab === 'local' }"
         @click="activeTab = 'local'"
       >
@@ -54,6 +61,9 @@
 
     <!-- Wav2Lip Tab (ComfyUI) -->
     <ComfyWav2LipTab v-if="activeTab === 'wav2lip'" />
+
+    <!-- Subject Video Tab (Gemini API) -->
+    <SubjectVideoTab v-if="activeTab === 'subject'" />
 
     <!-- Video Tab -->
     <template v-if="activeTab === 'video'">
@@ -137,6 +147,7 @@ import NanoImageTab from '../components/NanoImageTab.vue'
 import LocalVideoTab from '../components/local/LocalVideoTab.vue'
 import ComfyWav2LipTab from '../components/local/ComfyWav2LipTab.vue'
 import VeoPromptOptimizer from '../components/veo/VeoPromptOptimizer.vue'
+import SubjectVideoTab from '../components/SubjectVideoTab.vue'
 import VeoHeroSection from '../components/veo/VeoHeroSection.vue'
 import VeoGenerationForm from '../components/veo/VeoGenerationForm.vue'
 import VeoHistoryGallery from '../components/veo/VeoHistoryGallery.vue'
@@ -159,7 +170,7 @@ import {
   type VeoUiStateSnapshot,
 } from '../api/veo'
 
-const activeTab = ref<'video' | 'image' | 'local' | 'wav2lip'>('video')
+const activeTab = ref<'video' | 'image' | 'local' | 'wav2lip' | 'subject'>('video')
 const nanoTabRef = ref<InstanceType<typeof NanoImageTab> | null>(null)
 
 // ── Component Refs ──

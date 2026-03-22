@@ -57,6 +57,11 @@ export const API_ENDPOINTS = {
   // Nano 圖片歷史
   settingsNanoHistory: `${API_BASE_URL}/api/settings/nano-history`,
 
+  // Gemini Subject Video
+  veoGeminiGenerate: `${API_BASE_URL}/api/veo/gemini-generate`,
+  veoGeminiPoll: `${API_BASE_URL}/api/veo/gemini-poll`,
+  veoDescribeForVideo: `${API_BASE_URL}/api/veo/describe-for-video`,
+
   // 儲存模式（本地 / NAS）
   settingsStorage: `${API_BASE_URL}/api/settings/storage`,
 }
