@@ -56,8 +56,8 @@
           @dragstart="onDragStart($event, asset)"
           :title="asset.label"
         >
-          <img v-if="asset.type === 'image'" :src="asset.url" alt="" draggable="false" />
-          <video v-else :src="asset.url" muted draggable="false" />
+          <img v-if="asset.type === 'image'" :src="resolveMediaUrl(asset.url)" alt="" draggable="false" />
+          <video v-else :src="resolveMediaUrl(asset.url)" muted draggable="false" />
           <div class="asset-thumb-overlay">
             <span class="asset-type-badge">{{ asset.type === 'image' ? '🖼️' : '🎬' }}</span>
             <button class="asset-remove-btn" @click.stop="removeAsset(asset.id)" title="移除">×</button>
@@ -98,7 +98,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAssetLibrary, type AssetItem } from '../composables/useAssetLibrary'
-import { API_BASE_URL } from '../api/config'
+import { resolveMediaUrl } from '../api/config'
 
 const { assets, addAsset, removeAsset, clearAll } = useAssetLibrary()
 const isOpen = ref(false)

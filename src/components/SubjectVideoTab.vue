@@ -122,8 +122,8 @@
             <p class="job-prompt">{{ job.prompt.substring(0, 120) }}...</p>
             <div v-if="job.outputs?.length" class="job-videos">
               <div v-for="output in job.outputs" :key="output.index" class="video-card">
-                <video :src="output.localUrl" controls preload="metadata" />
-                <a :href="output.localUrl" download class="btn btn-secondary btn-sm">下載</a>
+                <video :src="resolveMediaUrl(output.localUrl)" controls preload="metadata" />
+                <a :href="resolveMediaUrl(output.localUrl)" download class="btn btn-secondary btn-sm">下載</a>
               </div>
             </div>
             <div v-if="job.status === 'running' || job.status === 'pending'" class="job-loading">
@@ -178,6 +178,7 @@ import {
   type VeoJob,
   type FailureAnalysis,
 } from '../api/veo'
+import { resolveMediaUrl } from '../api/config'
 
 interface RefSlot {
   base64Data: string

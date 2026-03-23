@@ -67,5 +67,11 @@ export const API_ENDPOINTS = {
   settingsStorage: `${API_BASE_URL}/api/settings/storage`,
 }
 
+// 解析媒體 URL（自動加 API_BASE_URL 前綴）
+export function resolveMediaUrl(path: string): string {
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+}
+
 // WebSocket URL (與 API 同源)
 export const WEBSOCKET_URL = API_BASE_URL
