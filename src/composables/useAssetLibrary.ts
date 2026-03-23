@@ -36,7 +36,28 @@ async function loadFromBackend(): Promise<AssetItem[]> {
     const data = await resp.json()
     const items: AssetItem[] = data.ok ? (data.index || data.items || []) : []
     // Normalize any absolute localhost URLs to relative paths
-    return items.map(item => ({ ...item, url: normalizeUrl(item.url) }))
+    const normalized = items.map(item => ({ ...item, url: normalizeUrl(item.url) }))
+    // Validate: remove entries whose files no longer exist on server
+    const validated: AssetItem[] = []
+    for (const item of normalized) {
+      try {
+        const check = await fetch(`${API_BASE_URL}${item.url}`, { method: 'HEAD' })
+        if (check.ok) validated.push(item)
+      } catch { /* file doesn't exist, skip */ }
+    }
+    // If we removed broken entries, persist the cleaned list
+    if (validated.length < normalized.length) {
+      setTimeout(async () => {
+        try {
+          await fetch(`${API_BASE_URL}/api/assets/index`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: validated }),
+          })
+        } catch { /* ignore */ }
+      }, 1000)
+    }
+    return validated
   } catch {
     // Fallback: try localStorage migration
     try {
