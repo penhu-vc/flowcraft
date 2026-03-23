@@ -381,19 +381,11 @@ const visibleOutputPorts = computed(() => {
 // ── Connection validation handle classes ──
 function inputHandleClass(handleId: string): string {
   const fromNodeId = props.connectingFromNodeId
-  const fromHandleId = props.connectingFromHandleId
   if (!fromNodeId) return ''
-  // Self-connection: this IS the source node
+  // Self-connection: this IS the source node — all its input handles are invalid
   if (fromNodeId === props.id) return 'invalid-target'
-  // Duplicate connection check
-  const allEdges = props.existingEdges ?? edges.value
-  const duplicate = allEdges.some(
-    e => e.source === fromNodeId &&
-         e.sourceHandle === (fromHandleId ?? null) &&
-         e.target === props.id &&
-         e.targetHandle === handleId
-  )
-  return duplicate ? 'invalid-target' : 'valid-target'
+  // Otherwise mark as valid target
+  return 'valid-target'
 }
 
 function outputHandleClass(handleId: string): string {
@@ -691,7 +683,8 @@ function onCommentColorChange(color: string) {
   border: 2px solid var(--bg-base);
   border-radius: 50%;
   cursor: crosshair;
-  z-index: 5;
+  z-index: 20;
+  pointer-events: all !important;
 }
 :deep(.port-handle-out) { background: v-bind(color); }
 :deep(.port-handle-in)  { background: var(--accent-cyan); }
@@ -704,7 +697,7 @@ function onCommentColorChange(color: string) {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35), 0 0 10px rgba(16, 185, 129, 0.55) !important;
   animation: pulse-valid-handle 1s ease-in-out infinite;
   transform: scale(1.45) !important;
-  z-index: 10;
+  z-index: 30;
 }
 
 /* Invalid target: dim and red tint */

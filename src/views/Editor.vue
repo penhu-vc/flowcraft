@@ -235,17 +235,9 @@ function onConnectEnd() {
 }
 
 function isValidConnection(connection: Connection): boolean {
-  const { source, target, sourceHandle, targetHandle } = connection
-  // Prevent self-connections
-  if (source === target) return false
-  // Prevent duplicate connections (same source handle → same target handle)
-  const duplicate = edges.value.some(
-    e => e.source === source &&
-         e.sourceHandle === (sourceHandle ?? null) &&
-         e.target === target &&
-         e.targetHandle === (targetHandle ?? null)
-  )
-  return !duplicate
+  const { source, target } = connection
+  // Only reject self-connections (same node → same node)
+  return source !== target
 }
 
 // Edge styling

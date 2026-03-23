@@ -268,6 +268,12 @@ body {
 .pulsing { animation: pulse 2s infinite; }
 
 /* ─── Vue Flow overrides ──────────────────────────────────── */
+.vue-flow__handle {
+  pointer-events: all !important;
+  z-index: 20 !important;
+  cursor: crosshair !important;
+}
+
 .vue-flow__background { background: var(--bg-base); }
 .vue-flow__edge-path { stroke: var(--accent-cyan) !important; stroke-width: 2 !important; }
 .vue-flow__controls {
