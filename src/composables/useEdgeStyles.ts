@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { watch, ref, type Ref } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
 
 export function useEdgeStyles(
@@ -9,18 +9,32 @@ export function useEdgeStyles(
   selectedNodes: Ref<Node[]>,
   runningNodeId: Ref<string | null | undefined>
 ) {
-  const styledEdges = computed(() => {
-    return edges.value.map(edge => {
+  // Track which edge is hovered for hover-highlight feature
+  const hoveredEdgeId = ref<string | null>(null)
+
+  function onEdgeMouseEnter(edge: Edge) {
+    hoveredEdgeId.value = edge.id
+  }
+
+  function onEdgeMouseLeave() {
+    hoveredEdgeId.value = null
+  }
+
+  // Apply styles directly to edges in-place (mutate) so v-model:edges works
+  function applyEdgeStyles() {
+    const multiSelectedIds = new Set(selectedNodes.value.map(n => n.id))
+    const currentRunningId = runningNodeId.value
+
+    for (const edge of edges.value) {
       const sourceNode = nodes.value.find(n => n.id === edge.source)
       const targetNode = nodes.value.find(n => n.id === edge.target)
       const isDisabledEdge = sourceNode?.data.disabled || targetNode?.data.disabled
       const isSelectedEdge = edge.id === selectedEdgeId.value
+      const isHoveredEdge = edge.id === hoveredEdgeId.value
       const isConnectedToSelected = selectedNodeId.value &&
         (edge.source === selectedNodeId.value || edge.target === selectedNodeId.value)
-      const multiSelectedIds = new Set(selectedNodes.value.map(n => n.id))
       const isMultiSelectedEdge = multiSelectedIds.size >= 2 &&
         multiSelectedIds.has(edge.source) && multiSelectedIds.has(edge.target)
-      const currentRunningId = runningNodeId.value
       const isDownstreamOfExecuting = currentRunningId && edge.source === currentRunningId
 
       let edgeClass = ''
@@ -30,7 +44,7 @@ export function useEdgeStyles(
         edgeClass = 'edge-dimmed'
       } else if (currentRunningId) {
         if (isDownstreamOfExecuting) {
-          edgeClass = 'edge-executing'
+          edgeClass = 'edge-executing edge-flow-animated'
           animated = true
         } else {
           edgeClass = 'edge-dimmed'
@@ -46,9 +60,21 @@ export function useEdgeStyles(
         animated = isConnectedToSelected
       }
 
-      return { ...edge, class: edgeClass, animated }
-    })
-  })
+      if (isHoveredEdge && !isDisabledEdge && edgeClass !== 'edge-dimmed') {
+        edgeClass = (edgeClass ? edgeClass + ' ' : '') + 'edge-hovered'
+      }
 
-  return { styledEdges }
+      edge.class = edgeClass
+      edge.animated = animated
+    }
+  }
+
+  // Watch all relevant dependencies and apply styles
+  watch(
+    [edges, selectedNodeId, selectedEdgeId, selectedNodes, runningNodeId, hoveredEdgeId],
+    applyEdgeStyles,
+    { deep: true, immediate: true }
+  )
+
+  return { onEdgeMouseEnter, onEdgeMouseLeave }
 }

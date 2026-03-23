@@ -27,6 +27,18 @@
       <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="$emit('align-center')" title="垂直置中對齊">⫼ 置中</button>
       <button v-if="hasMultiSelection" class="btn btn-secondary btn-sm" @click="$emit('align-horizontal')" title="水平對齊">⫻ 水平</button>
       <button class="btn btn-secondary btn-sm" @click="$emit('auto-layout')" title="自動排版節點">✨ 自動排版</button>
+      <button
+        class="btn btn-secondary btn-sm"
+        :class="{ 'btn-active': showMiniMap }"
+        @click="$emit('toggle-minimap')"
+        title="切換迷你地圖"
+      >🗺️ 地圖</button>
+      <button
+        class="btn btn-secondary btn-sm"
+        :class="{ 'btn-active': snapGrid }"
+        @click="$emit('toggle-snap-grid')"
+        title="對齊網格（20px）"
+      >🧲 對齊</button>
       <button class="btn btn-secondary btn-sm" @click="$emit('save')">💾 儲存</button>
       <button class="btn btn-secondary btn-sm" @click="$emit('export')">⬇️ 匯出</button>
       <button
@@ -56,6 +68,8 @@ const props = defineProps<{
   hasMultiSelection: boolean
   isRunning: boolean
   currentExecutionId: string | null
+  showMiniMap: boolean
+  snapGrid: boolean
 }>()
 
 const emit = defineEmits<{
@@ -63,6 +77,8 @@ const emit = defineEmits<{
   'align-center': []
   'align-horizontal': []
   'auto-layout': []
+  'toggle-minimap': []
+  'toggle-snap-grid': []
   'save': []
   'export': []
   'execute': []
@@ -113,6 +129,13 @@ async function copyWorkflowName() {
 </script>
 
 <style scoped>
+/* Active/toggled button state */
+.btn-active {
+  background: rgba(6, 182, 212, 0.15) !important;
+  border-color: var(--accent-cyan) !important;
+  color: var(--accent-cyan) !important;
+}
+
 /* Workflow name editing */
 .topbar-title-input {
   background: var(--bg-elevated);

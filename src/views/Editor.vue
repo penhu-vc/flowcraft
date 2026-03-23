@@ -6,10 +6,14 @@
     :hasMultiSelection="hasMultiSelection"
     :isRunning="executionStore.isRunning"
     :currentExecutionId="executionStore.currentExecution?.id || null"
+    :showMiniMap="showMiniMap"
+    :snapGrid="snapGrid"
     @go-back="router.back()"
     @align-center="alignCenter"
     @align-horizontal="alignHorizontal"
     @auto-layout="applyAutoLayout"
+    @toggle-minimap="showMiniMap = !showMiniMap"
+    @toggle-snap-grid="toggleSnapGrid"
     @save="onSave"
     @export="store.exportWorkflow(wfId)"
     @execute="onExecute"
@@ -31,18 +35,26 @@
     />
 
     <!-- Canvas -->
-    <div class="canvas-area" ref="canvasRef" @dragover.prevent @drop="onDrop">
+    <div class="canvas-area" :class="{ 'snap-grid-active': snapGrid }" ref="canvasRef" @dragover.prevent @drop="onDrop">
       <VueFlow
         v-model:nodes="nodes"
-        :edges="styledEdges"
+        v-model:edges="edges"
         :default-edge-options="{ animated: true, selectable: true, deletable: true, interactionWidth: 20 }"
+        :snap-to-grid="snapGrid"
+        :snap-grid="[20, 20]"
+        :connection-line-style="{ stroke: '#22d3ee', strokeWidth: 2, strokeDasharray: '6 4', opacity: 0.9 }"
         @node-click="onNodeClick"
         @edge-click="onEdgeClick"
+        @edge-mouse-enter="(_event: MouseEvent, edge: any) => onEdgeMouseEnter(edge)"
+        @edge-mouse-leave="() => onEdgeMouseLeave()"
         @pane-click="onPaneClick"
         @connect="onConnect"
         @nodes-change="onNodesChange"
         @edges-change="onEdgesChange"
-        :is-valid-connection="() => true"
+        @connect-start="onConnectStart"
+        @connect-end="onConnectEnd"
+        :is-valid-connection="isValidConnection"
+        :class="{ 'is-connecting': connectingState.active }"
         nodes-connectable
         edges-deletable
         nodes-deletable
@@ -55,10 +67,23 @@
       >
         <Background pattern-color="rgba(255,255,255,0.05)" :gap="24" />
         <Controls />
-        <MiniMap :node-color="nodeColor" />
+        <MiniMap
+          v-if="showMiniMap"
+          :node-color="nodeColor"
+          position="bottom-left"
+          :width="180"
+          :height="120"
+          mask-color="rgba(15, 16, 36, 0.6)"
+        />
 
         <template #node-custom="props">
-          <CustomNode v-bind="props" @retryNode="handleRetryNode" />
+          <CustomNode
+            v-bind="props"
+            :connecting-from-node-id="connectingState.nodeId"
+            :connecting-from-handle-id="connectingState.handleId"
+            :existing-edges="edges"
+            @retryNode="handleRetryNode"
+          />
         </template>
       </VueFlow>
 
@@ -113,10 +138,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, addEdge } from '@vue-flow/core'
-import type { Connection } from '@vue-flow/core'
+import type { Connection, ConnectStartParams } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -175,13 +200,57 @@ const propsPanelRef = ref<InstanceType<typeof NodePropertiesPanel> | null>(null)
 
 // VueFlow utilities
 const canvasRef = ref<HTMLElement>()
-const { project, updateNode, getSelectedNodes } = useVueFlow()
+const showMiniMap = ref(true)
+// Snap to grid
+const snapGrid = ref(localStorage.getItem('flowcraft_snap_grid') === 'true')
+function toggleSnapGrid() {
+  snapGrid.value = !snapGrid.value
+  localStorage.setItem('flowcraft_snap_grid', String(snapGrid.value))
+}
+
+const { project, updateNode, getSelectedNodes, fitView } = useVueFlow()
 const selectedNodes = computed(() => getSelectedNodes.value)
 const hasMultiSelection = computed(() => selectedNodes.value.length >= 2)
 
+// Connection validation state
+const connectingState = reactive({
+  active: false,
+  nodeId: null as string | null,
+  handleId: null as string | null,
+  handleType: null as string | null,
+})
+
+function onConnectStart(params: ConnectStartParams) {
+  connectingState.active = true
+  connectingState.nodeId = params.nodeId ?? null
+  connectingState.handleId = params.handleId ?? null
+  connectingState.handleType = params.handleType ?? null
+}
+
+function onConnectEnd() {
+  connectingState.active = false
+  connectingState.nodeId = null
+  connectingState.handleId = null
+  connectingState.handleType = null
+}
+
+function isValidConnection(connection: Connection): boolean {
+  const { source, target, sourceHandle, targetHandle } = connection
+  // Prevent self-connections
+  if (source === target) return false
+  // Prevent duplicate connections (same source handle → same target handle)
+  const duplicate = edges.value.some(
+    e => e.source === source &&
+         e.sourceHandle === (sourceHandle ?? null) &&
+         e.target === target &&
+         e.targetHandle === (targetHandle ?? null)
+  )
+  return !duplicate
+}
+
 // Edge styling
 const runningNodeIdRef = computed(() => executionStore.runningNodeId)
-const { styledEdges } = useEdgeStyles(nodes, edges, selectedNodeId, selectedEdgeId, selectedNodes, runningNodeIdRef)
+const { onEdgeMouseEnter, onEdgeMouseLeave } = useEdgeStyles(nodes, edges, selectedNodeId, selectedEdgeId, selectedNodes, runningNodeIdRef)
 
 // Keyboard shortcuts
 const { showUndoRedoToast, setupKeyboard, teardownKeyboard } = useEditorKeyboard({
@@ -277,12 +346,20 @@ function onDrop(e: DragEvent) {
   const position = project({ x: e.clientX - bounds.left, y: e.clientY - bounds.top })
   const def = getNodeDef(draggedNodeType.value)
   if (!def) return
+  const isComment = def.id === 'comment'
   const newNode: Node = {
     id: `${def.id}-${Date.now()}`,
     type: 'custom',
     position,
-    dragHandle: '.node-header',
-    data: { nodeType: def.id, label: def.name, icon: def.icon, category: def.category, config: {} },
+    dragHandle: isComment ? '.comment-node' : '.node-header',
+    style: isComment ? { width: '200px', height: '100px' } : undefined,
+    data: {
+      nodeType: def.id,
+      label: def.name,
+      icon: def.icon,
+      category: def.category,
+      config: isComment ? { text: '', bgColor: 'yellow' } : {},
+    },
   }
   nodes.value.push(newNode)
   draggedNodeType.value = ''
@@ -317,6 +394,7 @@ function applyAutoLayout() {
   const layoutedNodes = autoLayout(nodes.value, edges.value, 'LR')
   nodes.value = layoutedNodes
   recordHistory()
+  setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50)
   showUndoRedoToast('✨ 自動排版完成')
 }
 
@@ -486,16 +564,26 @@ onUnmounted(() => {
   filter: drop-shadow(0 0 4px var(--accent-cyan));
 }
 
+/* Animated data flow: flowing dashes from source to target during execution */
 :deep(.vue-flow__edge.edge-executing path) {
-  stroke: lime !important;
+  stroke: #4ade80 !important;
   stroke-width: 3px !important;
-  filter: drop-shadow(0 0 6px lime);
-  animation: pulse-edge 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px #4ade80);
+}
+
+:deep(.vue-flow__edge.edge-flow-animated path) {
+  stroke-dasharray: 8 5;
+  stroke-dashoffset: 0;
+  animation: flow-dash 0.6s linear infinite, pulse-edge 1.5s ease-in-out infinite;
+}
+
+@keyframes flow-dash {
+  to { stroke-dashoffset: -26; }
 }
 
 @keyframes pulse-edge {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.7; }
 }
 
 :deep(.vue-flow__edge.edge-dimmed path) {
@@ -507,8 +595,80 @@ onUnmounted(() => {
   opacity: 0.3;
 }
 
+/* Edge hover highlight: thicker and brighter */
+:deep(.vue-flow__edge.edge-hovered path) {
+  stroke: #67e8f9 !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 6px #22d3ee) drop-shadow(0 0 12px rgba(34,211,238,0.4));
+  transition: stroke-width 0.15s ease, filter 0.15s ease;
+}
+
+/* Magnetic handle snap glow: applied to handles when connecting is active */
+:deep(.is-connecting .vue-flow__handle.connectable) {
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.3), 0 0 12px rgba(34, 211, 238, 0.5);
+  transition: box-shadow 0.15s ease;
+}
+
+:deep(.is-connecting .vue-flow__handle.connectable:hover),
+:deep(.is-connecting .vue-flow__handle.valid) {
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.6), 0 0 20px rgba(34, 211, 238, 0.8);
+  transform: scale(1.4);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+/* Styled connection line while dragging (dashed cyan — visual reinforcement of connectionLineStyle prop) */
+:deep(.vue-flow__connection-path) {
+  stroke: #22d3ee !important;
+  stroke-width: 2px !important;
+  stroke-dasharray: 6 4 !important;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 4px rgba(34,211,238,0.6));
+}
+
 @keyframes toast-in {
   from { transform: translateY(-20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ── Connection validation handle states ── */
+
+/* Valid target: green glow pulse */
+:deep(.vue-flow__handle.valid-target) {
+  background: #10b981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4), 0 0 10px rgba(16, 185, 129, 0.6) !important;
+  animation: pulse-valid 1s ease-in-out infinite;
+  transform: scale(1.4) !important;
+  z-index: 10;
+}
+
+/* Invalid target: dim red */
+:deep(.vue-flow__handle.invalid-target) {
+  background: #ef4444 !important;
+  opacity: 0.45;
+  box-shadow: none !important;
+  transform: scale(0.85) !important;
+  cursor: not-allowed;
+}
+
+/* Source node being dragged from: dim its own handles slightly */
+:deep(.vue-flow__handle.connecting-source) {
+  opacity: 0.6;
+  transform: scale(0.9) !important;
+}
+
+@keyframes pulse-valid {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4), 0 0 10px rgba(16, 185, 129, 0.6); }
+  50%       { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.2), 0 0 18px rgba(16, 185, 129, 0.8); }
+}
+
+/* Connection line color tints green while connecting (complement to is-connecting .vue-flow__handle styles above) */
+:deep(.is-connecting .vue-flow__connection-path) {
+  stroke: #10b981 !important;
+}
+/* Snap-to-grid dot pattern */
+.snap-grid-active :deep(.vue-flow__pane) {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
 </style>

@@ -8,6 +8,7 @@ export function useAutoLayout() {
     direction: 'TB' | 'LR' = 'LR'
   ): Node[] {
     const g = new dagre.graphlib.Graph()
+    g.setDefaultEdgeLabel(() => ({}))
     g.setGraph({
       rankdir: direction,
       nodesep: 80,

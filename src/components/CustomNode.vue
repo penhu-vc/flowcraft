@@ -1,5 +1,36 @@
 <template>
-  <div class="custom-node" :class="{ selected, disabled: data.disabled, orphan: isOrphan, executing: isExecuting, error: hasError, dimmed: isDimmed, slowest: isSlowestNode }">
+  <!-- ── COMMENT node: special lightweight annotation rendering ── -->
+  <div
+    v-if="data.nodeType === 'comment'"
+    class="comment-node"
+    :class="{ selected }"
+    :style="commentStyle"
+  >
+    <div class="comment-color-bar" :style="{ background: commentAccentColor }"></div>
+    <textarea
+      class="comment-textarea"
+      :value="data.config?.text || ''"
+      placeholder="在此輸入備註..."
+      @input="onCommentInput"
+      @mousedown.stop
+      @pointerdown.stop
+    ></textarea>
+    <div class="comment-color-picker">
+      <button
+        v-for="c in commentColors"
+        :key="c.value"
+        class="comment-color-btn"
+        :class="{ active: (data.config?.bgColor || 'yellow') === c.value }"
+        :style="{ background: c.bg }"
+        :title="c.label"
+        @click.stop="onCommentColorChange(c.value)"
+        @mousedown.stop
+        @pointerdown.stop
+      ></button>
+    </div>
+  </div>
+
+  <div v-else class="custom-node" :class="{ selected, disabled: data.disabled, orphan: isOrphan, executing: isExecuting, error: hasError, dimmed: isDimmed, slowest: isSlowestNode }" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave">
 
     <!-- ── INPUT handles (left side, one per visible input port) ── -->
     <Handle
@@ -9,7 +40,7 @@
       type="target"
       :position="Position.Left"
       :style="inputHandleStyle(i)"
-      class="port-handle port-handle-in"
+      :class="['port-handle', 'port-handle-in', inputHandleClass(`in-${port.key}`)]"
     />
 
     <!-- Trigger Order Badge (outside node-card to avoid overflow:hidden) -->
@@ -86,17 +117,35 @@
       type="source"
       :position="Position.Right"
       :style="outputHandleStyle(i)"
-      class="port-handle port-handle-out"
+      :class="['port-handle', 'port-handle-out', outputHandleClass(`out-${port.key}`)]"
     />
+
+    <!-- ── Cache Tooltip ── -->
+    <Teleport to="body">
+      <div
+        v-if="tooltipVisible"
+        class="node-cache-tooltip"
+        :style="tooltipStyle"
+      >
+        <div class="cache-tooltip-header">
+          <span class="cache-tooltip-icon">💾</span>
+          <span class="cache-tooltip-title">快取結果</span>
+          <span v-if="cacheAge" class="cache-tooltip-age">{{ cacheAge }}</span>
+        </div>
+        <div v-if="cachePreviewText" class="cache-tooltip-body">{{ cachePreviewText }}</div>
+        <div v-else class="cache-tooltip-empty">尚未有快取結果</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, watch, ref } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { CATEGORY_COLORS, CATEGORY_LABELS, getNodeDef } from '../nodes/registry'
 import { MONITOR_OPTIONS } from '../nodes/youtubeMonitorOptions'
 import { useExecutionStore } from '../stores/execution'
+import { useNodeCacheStore } from '../stores/nodeCache'
 
 // Core ports always shown for YouTube Monitor regardless of monitorType
 const YT_CORE_PORTS = ['channel_name', 'title', 'thumbnail', 'url']
@@ -111,6 +160,10 @@ const props = defineProps<{
     config: Record<string, any>
   }
   selected: boolean
+  // Connection validation props passed from Editor
+  connectingFromNodeId?: string | null
+  connectingFromHandleId?: string | null
+  existingEdges?: import('@vue-flow/core').Edge[]
 }>()
 
 const emit = defineEmits<{
@@ -118,6 +171,78 @@ const emit = defineEmits<{
 }>()
 
 const executionStore = useExecutionStore()
+const nodeCacheStore = useNodeCacheStore()
+
+// ── Cache tooltip ──
+const nodeEl = ref<HTMLElement | null>(null)
+const tooltipVisible = ref(false)
+const tooltipTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const tooltipStyle = ref<Record<string, string>>({})
+
+const cachedEntry = computed(() => nodeCacheStore.getCacheResult(props.id))
+const cacheAge = computed(() => nodeCacheStore.getCacheAge(props.id))
+
+const cachePreviewText = computed(() => {
+  const entry = cachedEntry.value
+  if (!entry) return null
+  try {
+    const raw = typeof entry.result === 'string' ? entry.result : JSON.stringify(entry.result, null, 2)
+    return raw.length > 200 ? raw.slice(0, 200) + '…' : raw
+  } catch {
+    return String(entry.result).slice(0, 200)
+  }
+})
+
+function computeTooltipStyle() {
+  const el = nodeEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const tooltipWidth = 300
+  const gap = 8
+
+  // Prefer above; if not enough space, show below
+  const spaceAbove = rect.top
+  const spaceBelow = window.innerHeight - rect.bottom
+
+  let top: number
+  if (spaceAbove >= 120 || spaceAbove >= spaceBelow) {
+    // Position above
+    top = rect.top - gap
+    tooltipStyle.value = {
+      position: 'fixed',
+      top: `${top}px`,
+      transform: 'translateY(-100%)',
+      left: `${Math.max(8, Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 8))}px`,
+      width: `${tooltipWidth}px`,
+    }
+  } else {
+    // Position below
+    top = rect.bottom + gap
+    tooltipStyle.value = {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${Math.max(8, Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 8))}px`,
+      width: `${tooltipWidth}px`,
+    }
+  }
+}
+
+function onMouseEnter(e: MouseEvent) {
+  nodeEl.value = (e.currentTarget as HTMLElement)
+  tooltipTimer.value = setTimeout(() => {
+    computeTooltipStyle()
+    tooltipVisible.value = true
+  }, 500)
+}
+
+function onMouseLeave() {
+  if (tooltipTimer.value) {
+    clearTimeout(tooltipTimer.value)
+    tooltipTimer.value = null
+  }
+  tooltipVisible.value = false
+}
+
 const nodeStatus = computed(() => executionStore.getNodeExecution(props.id)?.status)
 const isExecuting = computed(() => nodeStatus.value === 'running')
 const hasError = computed(() => nodeStatus.value === 'failed')
@@ -174,7 +299,7 @@ const outputOrder = computed<string[]>(() => {
 })
 
 // Update node internals when port order changes
-const { updateNodeInternals, edges } = useVueFlow()
+const { updateNodeInternals, edges, updateNode } = useVueFlow()
 
 // 孤立節點：輸入和輸出都沒有連線，視同停用
 const isOrphan = computed(() => {
@@ -253,6 +378,32 @@ const visibleOutputPorts = computed(() => {
   return filtered
 })
 
+// ── Connection validation handle classes ──
+function inputHandleClass(handleId: string): string {
+  const fromNodeId = props.connectingFromNodeId
+  const fromHandleId = props.connectingFromHandleId
+  if (!fromNodeId) return ''
+  // Self-connection: this IS the source node
+  if (fromNodeId === props.id) return 'invalid-target'
+  // Duplicate connection check
+  const allEdges = props.existingEdges ?? edges.value
+  const duplicate = allEdges.some(
+    e => e.source === fromNodeId &&
+         e.sourceHandle === (fromHandleId ?? null) &&
+         e.target === props.id &&
+         e.targetHandle === handleId
+  )
+  return duplicate ? 'invalid-target' : 'valid-target'
+}
+
+function outputHandleClass(handleId: string): string {
+  const fromNodeId = props.connectingFromNodeId
+  const fromHandleId = props.connectingFromHandleId
+  if (!fromNodeId) return ''
+  if (fromNodeId === props.id && fromHandleId === handleId) return 'connecting-source'
+  return ''
+}
+
 // Layout constants
 const HEADER_H = 52
 const ROW_H = 24
@@ -272,6 +423,62 @@ function outputHandleStyle(i: number) {
     right: '-6px',
     transform: 'none',
   }
+}
+
+// ── Comment node ──
+const commentColors = [
+  { value: 'yellow', label: '黃色', bg: '#ffd54f', border: '#f9a825', text: '#5d4037' },
+  { value: 'blue',   label: '藍色', bg: '#90caf9', border: '#1565c0', text: '#0d47a1' },
+  { value: 'green',  label: '綠色', bg: '#a5d6a7', border: '#2e7d32', text: '#1b5e20' },
+  { value: 'pink',   label: '粉色', bg: '#f48fb1', border: '#880e4f', text: '#880e4f' },
+]
+
+const commentBgColor = computed(() => {
+  const map: Record<string, string> = {
+    yellow: 'rgba(255, 213, 79, 0.25)',
+    blue:   'rgba(144, 202, 249, 0.25)',
+    green:  'rgba(165, 214, 167, 0.25)',
+    pink:   'rgba(244, 143, 177, 0.25)',
+  }
+  return map[props.data.config?.bgColor || 'yellow'] || map.yellow
+})
+
+const commentAccentColor = computed(() => {
+  const c = commentColors.find(x => x.value === (props.data.config?.bgColor || 'yellow'))
+  return c?.bg || '#ffd54f'
+})
+
+const commentTextColor = computed(() => {
+  const c = commentColors.find(x => x.value === (props.data.config?.bgColor || 'yellow'))
+  return c?.text || '#5d4037'
+})
+
+const commentBorderColor = computed(() => {
+  const c = commentColors.find(x => x.value === (props.data.config?.bgColor || 'yellow'))
+  return c?.border || '#f9a825'
+})
+
+const commentStyle = computed(() => ({
+  background: commentBgColor.value,
+  border: `1.5px solid ${commentBorderColor.value}`,
+  color: commentTextColor.value,
+  minWidth: '200px',
+  minHeight: '100px',
+}))
+
+function onCommentInput(e: Event) {
+  const text = (e.target as HTMLTextAreaElement).value
+  updateNode(props.id, node => ({
+    ...node,
+    data: { ...node.data, config: { ...node.data.config, text } }
+  }))
+}
+
+function onCommentColorChange(color: string) {
+  updateNode(props.id, node => ({
+    ...node,
+    data: { ...node.data, config: { ...node.data.config, bgColor: color } }
+  }))
 }
 </script>
 
@@ -480,10 +687,171 @@ function outputHandleStyle(i: number) {
 
 /* Handles */
 :deep(.port-handle) {
-  width: 11px; height: 11px;
+  width: 14px; height: 14px;
   border: 2px solid var(--bg-base);
   border-radius: 50%;
+  cursor: crosshair;
+  z-index: 5;
 }
 :deep(.port-handle-out) { background: v-bind(color); }
 :deep(.port-handle-in)  { background: var(--accent-cyan); }
+
+/* ── Connection validation handle states ── */
+
+/* Valid target: green glow + grow */
+:deep(.port-handle.valid-target) {
+  background: #10b981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35), 0 0 10px rgba(16, 185, 129, 0.55) !important;
+  animation: pulse-valid-handle 1s ease-in-out infinite;
+  transform: scale(1.45) !important;
+  z-index: 10;
+}
+
+/* Invalid target: dim and red tint */
+:deep(.port-handle.invalid-target) {
+  background: #ef4444 !important;
+  opacity: 0.4 !important;
+  box-shadow: none !important;
+  transform: scale(0.8) !important;
+  cursor: not-allowed;
+}
+
+/* Source handle being dragged from */
+:deep(.port-handle.connecting-source) {
+  opacity: 0.55;
+  transform: scale(0.88) !important;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.15) !important;
+}
+
+@keyframes pulse-valid-handle {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35), 0 0 10px rgba(16, 185, 129, 0.55); }
+  50%       { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.15), 0 0 18px rgba(16, 185, 129, 0.75); }
+}
+
+/* ── Comment Node ── */
+.comment-node {
+  position: relative;
+  border-radius: 8px;
+  padding: 8px 10px 32px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.2);
+  cursor: default;
+  min-width: 200px;
+  min-height: 100px;
+}
+.comment-node.selected {
+  box-shadow: 0 0 0 2px v-bind(commentAccentColor), 0 3px 12px rgba(0,0,0,0.3);
+}
+.comment-color-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 8px 8px 0 0;
+}
+.comment-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: inherit;
+  font-family: inherit;
+  width: 100%;
+  min-height: 70px;
+}
+.comment-textarea::placeholder {
+  opacity: 0.5;
+}
+.comment-color-picker {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+.comment-color-btn {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0,0,0,0.2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease;
+}
+.comment-color-btn:hover {
+  transform: scale(1.25);
+}
+.comment-color-btn.active {
+  border: 2px solid rgba(0,0,0,0.5);
+  transform: scale(1.2);
+}
+</style>
+
+<style>
+/* Cache tooltip — non-scoped so Teleport to body works */
+.node-cache-tooltip {
+  z-index: 9999;
+  max-width: 300px;
+  background: #1a1b2eee;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  pointer-events: none;
+  font-family: inherit;
+  animation: tooltip-fade-in 0.15s ease;
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.cache-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cache-tooltip-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.cache-tooltip-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a0a8d0;
+  flex: 1;
+  letter-spacing: 0.03em;
+}
+
+.cache-tooltip-age {
+  font-size: 10px;
+  color: #6b7aaa;
+  white-space: nowrap;
+}
+
+.cache-tooltip-body {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #cdd5f0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.cache-tooltip-empty {
+  font-size: 11px;
+  color: #6b7aaa;
+  font-style: italic;
+}
 </style>

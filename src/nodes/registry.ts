@@ -722,6 +722,16 @@ export const NODE_REGISTRY: NodeDef[] = [
         ],
     },
     {
+        id: 'comment',
+        name: '備註',
+        category: 'logic',
+        icon: '📝',
+        description: '在工作流中添加備註說明，純標注用途，不影響執行',
+        version: '1.0.0',
+        inputs: [],
+        outputs: [],
+    },
+    {
         id: 'bullet-point-reference',
         name: '列點型參考',
         category: 'data',
