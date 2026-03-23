@@ -76,7 +76,11 @@ router.get('/api/veo/status', (_req, res) => {
 })
 
 router.get('/api/veo/jobs', (_req, res) => {
-    res.json({ ok: true, jobs: listVeoJobs() })
+    try {
+        res.json({ ok: true, jobs: listVeoJobs() })
+    } catch (err: unknown) {
+        res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
 })
 
 router.get('/api/veo/jobs/:id', async (req, res) => {
@@ -446,25 +450,35 @@ router.get('/api/nano/status', (_req, res) => {
 })
 
 router.get('/api/nano/jobs', (_req, res) => {
-    const jobs = listNanoJobs().map((job: any) => ({
-        id: job.id,
-        status: job.status,
-        createdAt: job.createdAt,
-        updatedAt: job.updatedAt,
-        sourceMode: job.sourceMode,
-        prompt: job.prompt,
-        error: job.error,
-        outputs: job.outputs,
-        // Include snapshot without base64 for "恢復設定" button
-        requestSnapshot: job.requestSnapshot ? (() => {
-            const snap = { ...job.requestSnapshot }
-            if (snap.image) snap.image = { ...snap.image, base64Data: '[stripped]', previewUrl: undefined }
-            if (snap.maskImage) snap.maskImage = { ...snap.maskImage, base64Data: '[stripped]', previewUrl: undefined }
-            if (snap.referenceImages) snap.referenceImages = snap.referenceImages.map((r: any) => ({ ...r, base64Data: '[stripped]', previewUrl: undefined }))
-            return snap
-        })() : undefined,
-    }))
-    res.json({ ok: true, jobs })
+    try {
+        const jobs = listNanoJobs().map((job: any) => ({
+            id: job.id,
+            status: job.status,
+            createdAt: job.createdAt,
+            updatedAt: job.updatedAt,
+            sourceMode: job.sourceMode,
+            prompt: job.prompt,
+            error: job.error,
+            outputs: job.outputs,
+            // Include snapshot without base64 for "恢復設定" button
+            requestSnapshot: job.requestSnapshot ? (() => {
+                const snap = { ...job.requestSnapshot }
+                if (snap.image) snap.image = { ...snap.image, base64Data: '[stripped]', previewUrl: undefined }
+                if (snap.maskImage) snap.maskImage = { ...snap.maskImage, base64Data: '[stripped]', previewUrl: undefined }
+                if (snap.referenceImages) snap.referenceImages = snap.referenceImages.map((r: any) => ({ ...r, base64Data: '[stripped]', previewUrl: undefined }))
+                return snap
+            })() : undefined,
+        }))
+        res.json({ ok: true, jobs })
+    } catch (err: unknown) {
+        res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+})
+
+router.get('/api/nano/jobs/:id/full', (req, res) => {
+    const job = listNanoJobs().find((j: any) => j.id === req.params.id)
+    if (!job) return res.status(404).json({ ok: false, error: 'Not found' })
+    res.json({ ok: true, job })
 })
 
 router.post('/api/nano/generate', async (req, res) => {

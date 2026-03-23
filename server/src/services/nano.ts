@@ -92,20 +92,53 @@ const getGeminiSettingsFile = () => join(getDataDir(), 'gemini-settings.json')
 const getGcpCredentialsFile = () => join(getDataDir(), 'gcp-credentials.json')
 
 const jobs = new Map<string, NanoJobRecord>()
-loadJobs()
+let loadedFromDir = ''
 
 function loadJobs() {
-  const jobsFile = getJobsFile()
+  const currentDir = getDataDir()
+  const jobsFile = join(currentDir, 'nano-jobs.json')
+  // 記錄本次嘗試讀取的目錄（即使檔案不存在，也標記已嘗試過此目錄）
+  loadedFromDir = currentDir
   if (!existsSync(jobsFile)) return
   try {
     const parsed = JSON.parse(readFileSync(jobsFile, 'utf8')) as NanoJobRecord[]
+    let hasOrphans = false
     for (const job of parsed) {
+      // Mark orphan "running" jobs as failed (server restart = job lost)
+      if (job.status === 'running') {
+        job.status = 'failed'
+        job.error = '伺服器重啟，任務中斷。'
+        job.updatedAt = new Date().toISOString()
+        hasOrphans = true
+      }
       jobs.set(job.id, job)
     }
+    if (hasOrphans) persistJobs()
   } catch (error) {
     console.warn('Failed to load Nano jobs:', error)
   }
 }
+
+function ensureLoaded() {
+  const currentDir = getDataDir()
+  if (loadedFromDir !== currentDir) {
+    jobs.clear()
+    loadJobs()
+  }
+}
+
+// 啟動時載入
+loadJobs()
+
+// 背景定期檢查：若資料目錄切換（NAS 上線），自動重新載入
+setInterval(() => {
+  const currentDir = getDataDir()
+  if (loadedFromDir !== currentDir) {
+    console.log(`[nano] dataDir changed: ${loadedFromDir} → ${currentDir}, reloading jobs`)
+    jobs.clear()
+    loadJobs()
+  }
+}, 30_000).unref()
 
 function persistJobs() {
   writeFileSync(
@@ -426,14 +459,17 @@ Only output valid JSON, no markdown fences.`
 }
 
 export function listNanoJobs() {
+  ensureLoaded()
   return [...jobs.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
 export function getNanoJob(jobId: string) {
+  ensureLoaded()
   return jobs.get(jobId)
 }
 
 export function deleteNanoJob(jobId: string) {
+  ensureLoaded()
   const job = jobs.get(jobId)
   if (!job) return false
 

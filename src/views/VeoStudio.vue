@@ -465,6 +465,8 @@ async function submit(backend: 'vertex' | 'gemini' = 'vertex') {
 }
 
 // ── Polling & Load ──
+let retryHandle: ReturnType<typeof setTimeout> | null = null
+
 async function loadAll() {
   try {
     const [status, list] = await Promise.all([fetchVeoStatus(), fetchVeoJobs()])
@@ -472,8 +474,18 @@ async function loadAll() {
     jobs.value = list.jobs
     if (activeJobs.value.length > 0) startPolling(); else stopPolling()
     nanoTabRef.value?.loadJobs()
+    // 成功後清掉 retry timer
+    if (retryHandle !== null) { clearTimeout(retryHandle); retryHandle = null }
+    errorMessage.value = ''
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
+    // 後端未就緒時，每 5 秒自動重試，直到成功
+    if (retryHandle === null) {
+      retryHandle = setTimeout(function retry() {
+        retryHandle = null
+        void loadAll()
+      }, 5000)
+    }
   }
 }
 
@@ -586,6 +598,7 @@ function useForExtend(jobId: string, index: number, localUrl?: string) {
 onMounted(() => { void loadAll() })
 onBeforeUnmount(() => {
   stopPolling()
+  if (retryHandle !== null) { clearTimeout(retryHandle); retryHandle = null }
   if (geminiPollHandle !== null) { clearInterval(geminiPollHandle); geminiPollHandle = null }
 })
 </script>

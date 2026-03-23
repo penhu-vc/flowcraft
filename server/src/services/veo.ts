@@ -94,14 +94,16 @@ const getGeminiSettingsFile = () => join(getDataDir(), 'gemini-settings.json')
 const getGcpCredentialsFile = () => join(getDataDir(), 'gcp-credentials.json')
 
 const jobs = new Map<string, VeoJobRecord>()
-loadJobs()
+let loadedFromDir = ''
 
 function loadJobs() {
-  const jobsFile = getJobsFile()
+  const currentDir = getDataDir()
+  const jobsFile = join(currentDir, 'veo-jobs.json')
+  // 記錄本次嘗試讀取的目錄（即使檔案不存在，也標記已嘗試過此目錄）
+  loadedFromDir = currentDir
   if (!existsSync(jobsFile)) {
     return
   }
-
   try {
     const parsed = JSON.parse(readFileSync(jobsFile, 'utf8')) as VeoJobRecord[]
     for (const job of parsed) {
@@ -111,6 +113,27 @@ function loadJobs() {
     console.warn('Failed to load Veo jobs:', error)
   }
 }
+
+function ensureLoaded() {
+  const currentDir = getDataDir()
+  if (loadedFromDir !== currentDir) {
+    jobs.clear()
+    loadJobs()
+  }
+}
+
+// 啟動時載入
+loadJobs()
+
+// 背景定期檢查：若資料目錄切換（NAS 上線），自動重新載入
+setInterval(() => {
+  const currentDir = getDataDir()
+  if (loadedFromDir !== currentDir) {
+    console.log(`[veo] dataDir changed: ${loadedFromDir} → ${currentDir}, reloading jobs`)
+    jobs.clear()
+    loadJobs()
+  }
+}, 30_000).unref()
 
 function persistJobs() {
   writeFileSync(
@@ -479,10 +502,12 @@ export async function refreshVeoJob(jobId: string) {
 }
 
 export function listVeoJobs() {
+  ensureLoaded()
   return [...jobs.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
 export function getVeoJob(jobId: string) {
+  ensureLoaded()
   return jobs.get(jobId)
 }
 
@@ -623,6 +648,7 @@ ${prompt}
 }
 
 export function deleteVeoJob(jobId: string) {
+  ensureLoaded()
   const job = jobs.get(jobId)
   if (!job) {
     return false
