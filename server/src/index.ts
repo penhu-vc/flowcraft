@@ -4,6 +4,8 @@ import { Server as SocketIO } from 'socket.io'
 import cors from 'cors'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { execFile } from 'child_process'
+import { createHmac } from 'crypto'
 
 // ── Route modules ────────────────────────────────────────────────
 import proxyRouter from './routes/proxy'
@@ -46,12 +48,47 @@ app.use('/api', settingsRouter)               // /api/settings/*, /api/auth/*, /
 app.use('/api', createWorkflowRouter(io))     // /api/execute, /api/workflow/*, /api/workflows/*, /api/prompts/*
 app.use('/api/workflow-api', createWorkflowApiRouter(io))  // /api/workflow-api/* (programmatic + AI builder)
 
+// ── GitHub Webhook Auto-Deploy ───────────────────────────────────
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'flowcraft-deploy-2026'
+app.post('/hooks/deploy', express.raw({ type: 'application/json' }), (req, res) => {
+    // Verify signature
+    const sig = req.headers['x-hub-signature-256'] as string
+    if (sig) {
+        const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body)
+        const expected = 'sha256=' + createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex')
+        if (sig !== expected) return res.status(403).json({ error: 'Invalid signature' })
+    }
+    // Only deploy on push to main
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+    if (payload?.ref && payload.ref !== 'refs/heads/main') {
+        return res.json({ ok: true, skipped: true, reason: 'not main branch' })
+    }
+    console.log(`[deploy] Webhook received, starting deploy...`)
+    res.json({ ok: true, message: 'Deploy started' })
+    // Run deploy.sh async
+    const deployScript = join(__dirname, '../../deploy.sh')
+    execFile('bash', [deployScript], { timeout: 300000 }, (err, stdout, stderr) => {
+        if (err) console.error(`[deploy] FAILED:`, err.message, stderr)
+        else console.log(`[deploy] SUCCESS:\n${stdout.slice(-500)}`)
+    })
+})
+
 // ── Serve frontend dist (production) ────────────────────────────
 const distPath = join(__dirname, '../../dist')
+const distBackupPath = join(__dirname, '../../dist-backup')
+
+// Backup version at /bc/
+if (existsSync(distBackupPath)) {
+    app.use('/bc', express.static(distBackupPath))
+    app.get('/bc/*', (_req, res) => res.sendFile(join(distBackupPath, 'index.html')))
+    console.log(`[static] Backup version at /bc/`)
+}
+
+// Current version
 if (existsSync(distPath)) {
     app.use(express.static(distPath))
     app.get('*', (_req, res) => {
-        if (!_req.path.startsWith('/api/') && !_req.path.startsWith('/generated/')) {
+        if (!_req.path.startsWith('/api/') && !_req.path.startsWith('/generated/') && !_req.path.startsWith('/hooks/') && !_req.path.startsWith('/bc')) {
             res.sendFile(join(distPath, 'index.html'))
         }
     })
