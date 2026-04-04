@@ -65,6 +65,15 @@ export const API_ENDPOINTS = {
 
   // 儲存模式（本地 / NAS）
   settingsStorage: `${API_BASE_URL}/api/settings/storage`,
+
+  // Seedance 相關
+  seedanceStatus: `${API_BASE_URL}/api/seedance/status`,
+  seedanceJobs: `${API_BASE_URL}/api/seedance/jobs`,
+  seedanceGenerate: `${API_BASE_URL}/api/seedance/generate`,
+  seedancePoll: `${API_BASE_URL}/api/seedance/poll`,
+  seedanceSettings: `${API_BASE_URL}/api/seedance/settings`,
+  seedanceExtend: `${API_BASE_URL}/api/seedance/extend`,
+  seedanceUploadMedia: `${API_BASE_URL}/api/seedance/upload-media`,
 }
 
 // 解析媒體 URL（自動加 API_BASE_URL 前綴）

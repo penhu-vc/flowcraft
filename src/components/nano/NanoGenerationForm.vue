@@ -1433,4 +1433,75 @@ defineExpose({
   color: var(--text-muted, #888);
   margin: 0;
 }
+
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+  /* Mode strip: scrollable on mobile */
+  .mode-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .mode-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .mode-pill {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Parameter controls: 2 columns on mobile */
+  .nano-params-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Upload areas: full width */
+  .outpaint-upload-slot {
+    width: 100%;
+    height: 100px;
+  }
+
+  /* Reference image grid: 2 columns */
+  .aic-subjects-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .aic-angle-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Multi-angle shot cards: full width */
+  .ma-shot-card {
+    flex: 1 1 100%;
+  }
+
+  /* Ref submode strip: scrollable */
+  .ref-submode-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .ref-submode-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* AIC submode strip: scrollable */
+  .aic-submode-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .aic-submode-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Multi-angle facing row: wrap */
+  .ma-facing-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
 </style>

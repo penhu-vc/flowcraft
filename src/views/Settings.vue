@@ -657,4 +657,62 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
 }
+
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+  /* Settings sections: full width, already stacked as cards */
+  .page-content {
+    padding: 8px !important;
+  }
+
+  /* Mode selector buttons: full width stacked */
+  .mode-selector {
+    flex-direction: column;
+  }
+  .mode-btn {
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+  }
+
+  /* Input + button rows: stack vertically */
+  .form-group div[style*="display: flex"] {
+    flex-wrap: wrap;
+  }
+
+  /* Form control: full width */
+  .form-control {
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  /* Buttons in input rows: full width on mobile */
+  .form-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Import credentials row: stack */
+  div[style*="display: flex; gap: 12px"] {
+    flex-direction: column;
+  }
+
+  /* Credentials info rows: wrap */
+  .info-row {
+    flex-wrap: wrap;
+  }
+  .info-label {
+    min-width: unset;
+    width: 100%;
+  }
+
+  /* Toast: full width at bottom */
+  .toast {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+}
 </style>

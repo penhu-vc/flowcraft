@@ -531,4 +531,52 @@ defineExpose({
     align-items: flex-start;
   }
 }
+
+@media (max-width: 768px) {
+  /* Source mode tabs: horizontally scrollable */
+  .mode-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .mode-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .mode-pill {
+    flex-shrink: 0;
+  }
+
+  /* Parameter pills: wrap instead of overflow */
+  .veo-params-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Textarea: full width (already block, ensure no min-width issues) */
+  .veo-textarea,
+  .form-textarea {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Submit buttons: stack vertically */
+  .submit-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .submit-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  .submit-buttons .btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Frames row: stack vertically */
+  .frames-row {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

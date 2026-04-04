@@ -12,6 +12,7 @@ import proxyRouter from './routes/proxy'
 import mediaRouter from './routes/media'
 import settingsRouter, { loadSettings } from './routes/settings'
 import { loadStorageConfig } from './dataDir'
+import seedanceRouter from './routes/seedance'
 import { createWorkflowRouter } from './routes/workflow'
 import { createWorkflowApiRouter } from './routes/workflow-api'
 
@@ -44,6 +45,7 @@ app.get('/api/health', (_req, res) => {
 // ── Mount routers ────────────────────────────────────────────────
 app.use(proxyRouter)                          // /api/local-proxy/*, /api/infinitetalk/*, /api/wav2lip/*
 app.use(mediaRouter)                          // /api/veo/*, /api/nano/*, /api/assets/*, /api/youtube/*, /generated/*
+app.use(seedanceRouter)                       // /api/seedance/*
 app.use('/api', settingsRouter)               // /api/settings/*, /api/auth/*, /api/telegram/*
 app.use('/api', createWorkflowRouter(io))     // /api/execute, /api/workflow/*, /api/workflows/*, /api/prompts/*
 app.use('/api/workflow-api', createWorkflowApiRouter(io))  // /api/workflow-api/* (programmatic + AI builder)

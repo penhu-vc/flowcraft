@@ -22,12 +22,21 @@
   />
 
   <div class="editor-layout">
+    <!-- Mobile palette toggle FAB -->
+    <button class="mobile-palette-fab" @click="showPalette = !showPalette" :class="{ active: showPalette }" title="節點目錄">
+      {{ showPalette ? '✕' : '＋' }}
+    </button>
+
+    <!-- Mobile palette backdrop -->
+    <div v-if="showPalette" class="mobile-palette-backdrop" @click="showPalette = false" />
+
     <!-- Node Palette -->
     <NodePalette
       :triggerMode="triggerMode"
       :sortedTriggers="sortedTriggers"
       :search="search"
       :filteredByCategory="filteredByCategory"
+      :class="{ 'palette-open': showPalette }"
       @update:search="search = $event"
       @update-trigger-mode="onTriggerModeUpdate"
       @update-trigger-order="updateTriggerOrder"
@@ -201,6 +210,8 @@ const propsPanelRef = ref<InstanceType<typeof NodePropertiesPanel> | null>(null)
 // VueFlow utilities
 const canvasRef = ref<HTMLElement>()
 const showMiniMap = ref(true)
+// Mobile: whether the node palette drawer is open
+const showPalette = ref(false)
 // Snap to grid
 const snapGrid = ref(localStorage.getItem('flowcraft_snap_grid') === 'true')
 function toggleSnapGrid() {
@@ -661,6 +672,115 @@ onUnmounted(() => {
 .snap-grid-active :deep(.vue-flow__pane) {
   background-image: radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px);
   background-size: 20px 20px;
+}
+
+/* ── Mobile palette FAB & backdrop ─────────────────────────── */
+.mobile-palette-fab {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 300;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-purple);
+  color: #fff;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(124,58,237,0.5);
+  transition: background 0.2s ease, transform 0.2s ease;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-palette-fab.active {
+  background: var(--red, #ef4444);
+  transform: rotate(45deg);
+}
+
+.mobile-palette-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 199;
+}
+
+/* ── Mobile media queries ──────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show FAB and backdrop */
+  .mobile-palette-fab    { display: flex; }
+  .mobile-palette-backdrop { display: block; }
+
+  /* Canvas takes full width */
+  .editor-layout {
+    position: relative;
+  }
+
+  /* Topbar buttons: icon only (hide text labels) */
+  :deep(.topbar-actions .btn span:last-child),
+  :deep(.topbar-actions .btn-success span:last-child) {
+    display: none;
+  }
+
+  /* NodePalette: bottom drawer on mobile, hidden by default */
+  :deep(.palette) {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    height: 65vh;
+    z-index: 200;
+    border-right: none !important;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    overflow-y: auto;
+  }
+
+  /* Show palette when toggled */
+  :deep(.palette.palette-open) {
+    transform: translateY(0);
+  }
+
+  /* NodePropertiesPanel: full-screen overlay on mobile */
+  :deep(.props-panel) {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    z-index: 250;
+    border-left: none !important;
+    border-radius: 0 !important;
+    overflow-y: auto;
+  }
+
+  /* Hide MiniMap on mobile */
+  :deep(.vue-flow__minimap) {
+    display: none !important;
+  }
+
+  /* Topbar: allow wrapping on very small screens */
+  :deep(.topbar) {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  :deep(.topbar-actions) {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* Topbar buttons: tighter padding on mobile */
+  :deep(.topbar-actions .btn) {
+    padding: 5px 8px;
+    font-size: 13px;
+  }
 }
 
 </style>

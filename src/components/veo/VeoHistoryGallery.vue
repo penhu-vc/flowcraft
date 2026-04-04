@@ -58,30 +58,45 @@
             </button>
           </div>
 
-          <div v-if="job.outputs.length > 0" class="video-grid">
+          <!-- Single or few videos: show all -->
+          <div v-if="job.outputs.length > 0 && job.outputs.length <= 3" class="video-grid">
             <div v-for="output in job.outputs" :key="`${job.id}-${output.index}`" class="video-card media-card-wrap">
-              <video
-                v-if="output.localUrl"
-                :src="resolveMediaUrl(output.localUrl)"
-                controls
-                playsinline
-              />
-              <button
-                v-if="output.localUrl && !hasAsset(resolveMediaUrl(output.localUrl))"
-                class="collect-btn"
-                @click="$emit('collect', output.localUrl, 'video')"
-                title="收入囊中"
-              >🎒 收入囊中</button>
+              <video v-if="output.localUrl" :src="resolveMediaUrl(output.localUrl)" controls playsinline />
+              <button v-if="output.localUrl && !hasAsset(resolveMediaUrl(output.localUrl))" class="collect-btn" @click="$emit('collect', output.localUrl, 'video')" title="收入囊中">🎒 收入囊中</button>
               <span v-else-if="output.localUrl && hasAsset(resolveMediaUrl(output.localUrl))" class="collect-done">✅ 已收</span>
               <div class="video-actions">
-                <a v-if="output.localUrl" class="btn btn-secondary btn-sm" :href="resolveMediaUrl(output.localUrl)" target="_blank" rel="noreferrer">
-                  開啟
-                </a>
-                <button class="btn btn-primary btn-sm" @click="$emit('extend', job.id, output.index, output.localUrl)">
-                  延長這支
-                </button>
+                <a v-if="output.localUrl" class="btn btn-secondary btn-sm" :href="resolveMediaUrl(output.localUrl)" target="_blank" rel="noreferrer"> 開啟 </a>
+                <button class="btn btn-primary btn-sm" @click="$emit('extend', job.id, output.index, output.localUrl)"> 延長這支 </button>
               </div>
             </div>
+          </div>
+
+          <!-- Multi-video (4+): hero video + collapsible scene grid -->
+          <div v-else-if="job.outputs.length > 3" class="multi-video-layout">
+            <!-- Hero: first video (full version) -->
+            <div class="hero-video media-card-wrap">
+              <div v-if="(job.outputs[0] as any)?.label" class="hero-label">{{ (job.outputs[0] as any).label }}</div>
+              <video v-if="job.outputs[0]?.localUrl" :src="resolveMediaUrl(job.outputs[0].localUrl)" controls playsinline />
+              <button v-if="job.outputs[0]?.localUrl && !hasAsset(resolveMediaUrl(job.outputs[0].localUrl))" class="collect-btn" @click="$emit('collect', job.outputs[0].localUrl!, 'video')" title="收入囊中">🎒 收入囊中</button>
+              <div class="video-actions">
+                <a v-if="job.outputs[0]?.localUrl" class="btn btn-secondary btn-sm" :href="resolveMediaUrl(job.outputs[0].localUrl)" target="_blank" rel="noreferrer"> 開啟 </a>
+                <button class="btn btn-primary btn-sm" @click="$emit('extend', job.id, 0, job.outputs[0]?.localUrl)"> 延長這支 </button>
+              </div>
+            </div>
+            <!-- Collapsible scene grid -->
+            <details class="scene-details">
+              <summary class="scene-summary">📎 {{ job.outputs.length - 1 }} 個分段場景</summary>
+              <div class="scene-grid">
+                <div v-for="output in job.outputs.slice(1)" :key="`${job.id}-${output.index}`" class="scene-thumb media-card-wrap">
+                  <div v-if="(output as any)?.label" class="scene-label">{{ (output as any).label }}</div>
+                  <video v-if="output.localUrl" :src="resolveMediaUrl(output.localUrl)" controls playsinline />
+                  <div class="video-actions">
+                    <a v-if="output.localUrl" class="btn btn-secondary btn-sm" :href="resolveMediaUrl(output.localUrl)" target="_blank" rel="noreferrer"> 開啟 </a>
+                    <button class="btn btn-primary btn-sm" @click="$emit('extend', job.id, output.index, output.localUrl)"> 延長 </button>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
         </article>
       </div>
@@ -318,10 +333,128 @@ function formatDate(value: string) {
   opacity: 1;
 }
 
+/* ── Multi-video layout ── */
+.multi-video-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hero-video {
+  position: relative;
+}
+.hero-video video {
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #000;
+}
+.hero-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(139, 92, 246, 0.85);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 6px;
+  z-index: 5;
+}
+.scene-details {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.scene-summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.03);
+  user-select: none;
+}
+.scene-summary:hover {
+  color: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.06);
+}
+.scene-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 12px;
+}
+.scene-thumb {
+  position: relative;
+}
+.scene-thumb video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+}
+.scene-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(0,0,0,0.7);
+  color: rgba(255,255,255,0.8);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  z-index: 5;
+}
+.scene-thumb .video-actions {
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+.scene-thumb .video-actions .btn {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 @media (max-width: 720px) {
   .history-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .scene-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  /* Video grid: single column */
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* History cards: smaller padding */
+  .history-card {
+    padding: 10px;
+  }
+
+  /* Failure analysis panels: full width */
+  .failure-analysis {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Action buttons: smaller on mobile */
+  .video-actions .btn {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  /* History head actions: wrap on small screens */
+  .history-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Scene grid: single column on mobile */
+  .scene-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

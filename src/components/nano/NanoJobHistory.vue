@@ -418,4 +418,50 @@ function onLbMouseDown(e: MouseEvent) {
 .media-card-wrap:hover .collect-done {
   opacity: 1;
 }
+
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+  /* Image grid: 2 columns on mobile */
+  .image-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  /* History cards: less padding */
+  .history-card {
+    padding: 10px 12px;
+  }
+
+  /* History head: wrap on small screens */
+  .history-head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Action buttons: compact and wrap */
+  .history-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .history-actions .btn-sm {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  /* Stats: wrap on small screens */
+  .history-stats {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Video actions: compact */
+  .video-actions {
+    gap: 4px;
+    padding: 6px;
+  }
+  .video-actions .btn-sm {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+}
 </style>

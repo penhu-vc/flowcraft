@@ -3,16 +3,17 @@
     <span class="topbar-title">🏠 工作流</span>
     <div class="topbar-actions">
       <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
-        ⬆️ 匯入
+        <span class="btn-text-desktop">⬆️ 匯入</span>
+        <span class="btn-text-mobile">⬆️</span>
         <input type="file" accept=".json" style="display:none" @change="onImport" />
       </label>
-      <button class="btn btn-primary" @click="showCreate = true">＋ 新建工作流</button>
+      <button class="btn btn-primary btn-new-workflow" @click="showCreate = true">＋ 新建工作流</button>
     </div>
   </div>
 
   <div class="page-content fade-in">
     <!-- Stats row -->
-    <div class="grid-3" style="margin-bottom:24px;">
+    <div class="grid-3 stats-grid" style="margin-bottom:24px;">
       <div class="card card-body" style="display:flex;align-items:center;gap:16px;">
         <div style="font-size:28px;">📋</div>
         <div>
@@ -139,11 +140,15 @@
             </label>
             <!-- Prominent duplicate button -->
             <button class="btn-duplicate" @click.stop="duplicateWorkflow(wf.id)" title="複製工作流">
-              <span>⧉</span> 複製
+              <span>⧉</span><span class="action-text"> 複製</span>
             </button>
-            <button class="btn btn-secondary btn-sm" @click.stop="store.exportWorkflow(wf.id)">⬇️ 匯出</button>
-            <button class="btn btn-secondary btn-sm" @click.stop="router.push(`/editor/${wf.id}`)">✏️ 編輯</button>
-            <button class="btn btn-danger btn-sm" style="margin-left:auto;" @click.stop="confirmDelete(wf.id, wf.name)">🗑️</button>
+            <button class="btn btn-secondary btn-sm" @click.stop="store.exportWorkflow(wf.id)" title="匯出">
+              <span>⬇️</span><span class="action-text"> 匯出</span>
+            </button>
+            <button class="btn btn-secondary btn-sm" @click.stop="router.push(`/editor/${wf.id}`)" title="編輯">
+              <span>✏️</span><span class="action-text"> 編輯</span>
+            </button>
+            <button class="btn btn-danger btn-sm" style="margin-left:auto;" @click.stop="confirmDelete(wf.id, wf.name)" title="刪除">🗑️</button>
           </div>
         </div>
       </div>
@@ -497,5 +502,72 @@ function onImport(e: Event) {
 @keyframes toast-in {
   from { transform: translateY(-20px); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* ── Mobile responsiveness ─────────────────────────────────── */
+.btn-text-mobile { display: none; }
+.btn-text-desktop { display: inline; }
+
+@media (max-width: 768px) {
+  /* Topbar: "新建工作流" button full width */
+  .btn-new-workflow {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Import button: icon only on mobile */
+  .btn-text-desktop { display: none; }
+  .btn-text-mobile  { display: inline; }
+
+  /* Stats grid: single column on mobile */
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    margin-bottom: 16px !important;
+  }
+
+  /* Stats cards: smaller text */
+  .stats-grid .card-body > div:first-child { font-size: 22px !important; }
+  .stats-grid .card-body > div > div:first-child { font-size: 18px !important; font-weight: 700; }
+  .stats-grid .card-body > div > div:last-child  { font-size: 11px !important; }
+
+  /* Toolbar: stack vertically */
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .search-wrap {
+    min-width: unset;
+  }
+  .sort-group {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .sort-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  /* Workflow grid: single column */
+  :global(.grid-auto) {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Card actions: icon-only (hide text labels) */
+  .action-text {
+    display: none;
+  }
+
+  /* Card actions: tighten gap */
+  .card-actions {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* Smaller action buttons on mobile */
+  .btn-duplicate {
+    padding: 4px 8px;
+  }
 }
 </style>

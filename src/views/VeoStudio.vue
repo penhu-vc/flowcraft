@@ -47,6 +47,13 @@
       >
         👄 Wav2Lip
       </button>
+      <button
+        class="studio-tab"
+        :class="{ active: activeTab === 'seedance' }"
+        @click="activeTab = 'seedance'"
+      >
+        🌱 Seedance
+      </button>
     </div>
 
     <!-- Image Tab -->
@@ -64,6 +71,9 @@
 
     <!-- Subject Video Tab (Gemini API) -->
     <SubjectVideoTab v-if="activeTab === 'subject'" />
+
+    <!-- Seedance Tab (PiAPI) -->
+    <SeedanceTab v-if="activeTab === 'seedance'" />
 
     <!-- Video Tab -->
     <template v-if="activeTab === 'video'">
@@ -149,6 +159,7 @@ import LocalVideoTab from '../components/local/LocalVideoTab.vue'
 import ComfyWav2LipTab from '../components/local/ComfyWav2LipTab.vue'
 import VeoPromptOptimizer from '../components/veo/VeoPromptOptimizer.vue'
 import SubjectVideoTab from '../components/SubjectVideoTab.vue'
+import SeedanceTab from '../components/seedance/SeedanceTab.vue'
 import VeoHeroSection from '../components/veo/VeoHeroSection.vue'
 import VeoGenerationForm from '../components/veo/VeoGenerationForm.vue'
 import VeoHistoryGallery from '../components/veo/VeoHistoryGallery.vue'
@@ -173,7 +184,7 @@ import {
   type VeoUiStateSnapshot,
 } from '../api/veo'
 
-const activeTab = ref<'video' | 'image' | 'local' | 'wav2lip' | 'subject'>('video')
+const activeTab = ref<'video' | 'image' | 'local' | 'wav2lip' | 'subject' | 'seedance'>('video')
 const nanoTabRef = ref<InstanceType<typeof NanoImageTab> | null>(null)
 
 // ── Component Refs ──
@@ -658,6 +669,79 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .veo-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Topbar compact */
+  .topbar {
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .topbar-title {
+    font-size: 14px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .topbar-actions .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+
+  .topbar-actions .btn-sm {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+
+  /* Page content padding */
+  .veo-page {
+    gap: 12px;
+    padding: 8px;
+  }
+
+  /* Tabs: sticky, horizontally scrollable, no wrap */
+  .studio-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    width: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .studio-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .studio-tab {
+    flex-shrink: 0;
+    padding: 7px 14px;
+    font-size: 13px;
+  }
+
+  /* Grid: full-width single column */
+  .veo-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Side column: stack vertically, full width */
+  .veo-side-column {
+    gap: 12px;
   }
 }
 </style>

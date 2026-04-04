@@ -191,24 +191,73 @@ export async function optimizeVeoPrompt(userPrompt: string, mode: string = 'text
         noop
     )
 
+    // executeGemini may return { result: string } or plain string
+    const raw = typeof result === 'string' ? result : (result as any)?.result ?? String(result)
+
+    // Aggressively strip ALL markdown fences (```json, ``` , etc.)
+    const cleaned = raw
+        .replace(/^[\s\S]*?```(?:json)?\s*\n?/i, '')   // strip opening fence
+        .replace(/\n?\s*```[\s\S]*$/i, '')               // strip closing fence
+        .trim()
+
+
+    function buildFullPrompt(c: Record<string, string>): string {
+        return [c.subject, c.context, c.action, c.style, c.camera, c.composition, c.ambiance, c.audio]
+            .filter(Boolean).join(' ')
+    }
+
+    const emptyComps = { subject: '', context: '', action: '', style: '', camera: '', composition: '', ambiance: '', audio: '' }
+
     try {
-        const cleaned = result.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
         const parsed = JSON.parse(cleaned)
+
+        // Handle both { components: { ... } } and flat { subject: ..., context: ... }
+        let comps: Record<string, string>
+        if (parsed.components && typeof parsed.components === 'object') {
+            comps = parsed.components
+        } else if (parsed.subject || parsed.context || parsed.action) {
+            // Flat structure — keys at top level
+            comps = { ...emptyComps }
+            for (const k of Object.keys(emptyComps)) {
+                if (typeof parsed[k] === 'string') comps[k] = parsed[k]
+            }
+        } else {
+            comps = { ...emptyComps }
+        }
+
+        // ALWAYS build fullPrompt from components — never trust Gemini's fullPrompt field
+        const builtPrompt = buildFullPrompt(comps)
+        const fullPrompt = builtPrompt || parsed.fullPrompt || raw.trim()
+
+
         return {
-            components: parsed.components,
-            fullPrompt: parsed.fullPrompt,
-            negativePrompt: parsed.negativePrompt || '',
+            components: comps,
+            fullPrompt,
+            negativePrompt: parsed.negativePrompt || parsed.negative_prompt || '',
             sections: sectionKeys,
             sectionLabels
         }
     } catch {
-        // Fallback: 如果 JSON 解析失敗，把整段當 fullPrompt
+        // JSON parse failed — try to extract JSON from the raw text
+        const jsonMatch = raw.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+            try {
+                const parsed2 = JSON.parse(jsonMatch[0])
+                const comps = parsed2.components || { ...emptyComps }
+                return {
+                    components: comps,
+                    fullPrompt: buildFullPrompt(comps) || raw.trim(),
+                    negativePrompt: parsed2.negativePrompt || '',
+                    sections: sectionKeys,
+                    sectionLabels
+                }
+            } catch { /* fall through */ }
+        }
+
+        // Ultimate fallback: use raw text as prompt
         return {
-            components: {
-                subject: '', context: '', action: '', style: '',
-                camera: '', composition: '', ambiance: '', audio: ''
-            },
-            fullPrompt: result.trim(),
+            components: { ...emptyComps },
+            fullPrompt: raw.replace(/```json?\s*/gi, '').replace(/```/g, '').trim(),
             negativePrompt: '',
             sections: sectionKeys,
             sectionLabels

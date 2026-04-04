@@ -183,10 +183,76 @@ async function runOptimizer() {
     const data = await res.json()
     if (!data.ok) throw new Error(data.error || '優化失敗')
 
+    // ── Bulletproof parsing: handle ANY format Gemini returns ──
+    let comps: Record<string, string> = {}
+    let fp = ''
+    let neg = data.negativePrompt || ''
+
+    // Helper: try to extract components from any string that might be JSON
+    function extractFromJson(raw: string): Record<string, string> | null {
+      // Strip markdown fences: ```json ... ``` or ``` ... ```
+      let s = raw.replace(/^[\s\S]*?```(?:json)?\s*/i, '').replace(/```[\s\S]*$/, '')
+      // If still no leading {, try finding first { to last }
+      if (!s.trim().startsWith('{')) {
+        const i = s.indexOf('{')
+        const j = s.lastIndexOf('}')
+        if (i >= 0 && j > i) s = s.slice(i, j + 1)
+      }
+      if (!s.trim().startsWith('{')) return null
+      try {
+        const parsed = JSON.parse(s)
+        return parsed.components || parsed
+      } catch { return null }
+    }
+
+    // Source 1: data.components from backend
+    const backendComps = data.components || {}
+    const backendCompsHasValues = Object.values(backendComps).some((v: unknown) => typeof v === 'string' && v.length > 0)
+
+    // Source 2: try to parse data.fullPrompt as JSON
+    const rawFp = data.fullPrompt || ''
+    const fpParsed = extractFromJson(rawFp)
+
+    // Source 3: try to parse raw result text as JSON
+    const rawResult = data.rawResult || ''
+    const resultParsed = rawResult ? extractFromJson(rawResult) : null
+
+    // Pick the best components source (prefer one with actual values)
+    if (backendCompsHasValues) {
+      comps = backendComps
+    } else if (fpParsed) {
+      comps = fpParsed
+      // Also extract negative prompt if present
+      if ((fpParsed as any).negative) neg = (fpParsed as any).negative
+    } else if (resultParsed) {
+      comps = resultParsed
+      if ((resultParsed as any).negative) neg = (resultParsed as any).negative
+    } else {
+      comps = backendComps // fallback to whatever backend gave us
+    }
+
+    // Build fullPrompt as plain text from components (ALWAYS rebuild, never trust raw JSON)
+    const compKeys = ['subject', 'context', 'action', 'style', 'camera', 'composition', 'ambiance', 'audio']
+    const parts = compKeys.map(k => comps[k]).filter(Boolean)
+    if (parts.length > 0) {
+      fp = parts.join(' ')
+    } else {
+      // No components found - use raw fullPrompt but strip JSON formatting
+      fp = rawFp.replace(/^[\s\S]*?```(?:json)?\s*/i, '').replace(/```[\s\S]*$/, '').trim()
+      if (fp.startsWith('{')) {
+        // Still JSON, just show a plain version
+        try {
+          const p = JSON.parse(fp)
+          const allVals = Object.values(p.components || p).filter((v): v is string => typeof v === 'string')
+          fp = allVals.join(' ')
+        } catch { /* keep as-is */ }
+      }
+    }
+
     optimizeResult.value = {
-      components: data.components,
-      fullPrompt: data.fullPrompt,
-      negativePrompt: data.negativePrompt,
+      components: comps,
+      fullPrompt: fp,
+      negativePrompt: neg || data.negativePrompt,
       sections: data.sections,
       sectionLabels: data.sectionLabels
     }
